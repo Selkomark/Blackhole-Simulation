@@ -38,9 +38,10 @@ private:
   CinematicCamera *cinematicCamera;
   HUD *hud;
   
-  // Window properties
-  static constexpr int WIDTH = 1920;
-  static constexpr int HEIGHT = 1080;
+  // Window properties (dynamic)
+  int windowWidth;
+  int windowHeight;
+  bool isFullscreen;
   
   // State
   bool running;
@@ -52,6 +53,9 @@ private:
   void render(double elapsedTime);
   void updateWindowTitle();
   void cleanup();
+  void toggleFullscreen();
+  void handleWindowResize(int width, int height);
+  void recreateRenderTargets();
   
   // Helper to convert camera data for GPU
   void prepareCameraData(CameraData &data);

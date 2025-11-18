@@ -7,6 +7,7 @@ Application::Application()
     : window(nullptr), sdlRenderer(nullptr), font(nullptr),
       gpuRenderer(nullptr), gpuTexture(nullptr),
       blackHole(nullptr), camera(nullptr), cinematicCamera(nullptr), hud(nullptr),
+      windowWidth(1920), windowHeight(1080), isFullscreen(false),
       running(false), currentFPS(0) {}
 
 Application::~Application() {
@@ -26,15 +27,18 @@ bool Application::initialize() {
     return false;
   }
 
-  // Create window
+  // Create window (resizable)
   window = SDL_CreateWindow("Black Hole Simulation | GPU | Smooth Orbit",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             WIDTH, HEIGHT,
-                             SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+                             windowWidth, windowHeight,
+                             SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   if (!window) {
     std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  
+  // Get actual window size (may differ due to high DPI)
+  SDL_GetWindowSize(window, &windowWidth, &windowHeight);
 
   // Create SDL renderer
   sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -50,7 +54,7 @@ bool Application::initialize() {
   }
 
   // Initialize GPU renderer (Metal)
-  gpuRenderer = metal_rt_renderer_create(WIDTH, HEIGHT);
+  gpuRenderer = metal_rt_renderer_create(windowWidth, windowHeight);
   if (!gpuRenderer) {
     std::cerr << "ERROR: GPU renderer failed to initialize!\n";
     std::cerr << "Metal GPU acceleration is required for this simulation.\n";
@@ -58,10 +62,11 @@ bool Application::initialize() {
   }
 
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+                                  SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
   
   std::cout << "\n=== BLACK HOLE SIMULATION | GPU ACCELERATED ===\n";
-  std::cout << "Resolution: 1920 × 1080\n";
+  std::cout << "Resolution: " << windowWidth << " × " << windowHeight << "\n";
+  std::cout << "F          - Toggle fullscreen\n";
   std::cout << "C          - Cycle cinematic modes\n";
   std::cout << "WASD       - Move camera (manual mode)\n";
   std::cout << "Space      - Move camera up\n";
@@ -120,8 +125,17 @@ void Application::handleEvents() {
     } else if (e.type == SDL_KEYDOWN) {
       switch (e.key.keysym.sym) {
         case SDLK_ESCAPE:
+          if (isFullscreen) {
+            toggleFullscreen(); // Exit fullscreen on ESC
+          } else {
+            running = false; // Quit if windowed
+          }
+          break;
         case SDLK_q:
           running = false;
+          break;
+        case SDLK_f:
+          toggleFullscreen();
           break;
         case SDLK_r:
           cinematicCamera->reset();
@@ -136,6 +150,11 @@ void Application::handleEvents() {
           std::cout << "Cinematic Mode: " << cinematicCamera->getModeName() << std::endl;
           updateWindowTitle();
           break;
+      }
+    } else if (e.type == SDL_WINDOWEVENT) {
+      if (e.window.event == SDL_WINDOWEVENT_RESIZED || 
+          e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+        handleWindowResize(e.window.data1, e.window.data2);
       }
     }
   }
@@ -156,11 +175,11 @@ void Application::render(double elapsedTime) {
   // Render with Metal GPU
   metal_rt_renderer_render(gpuRenderer, &gpuCam, elapsedTime);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
-  SDL_UpdateTexture(gpuTexture, nullptr, pixels, WIDTH * 4);
+  SDL_UpdateTexture(gpuTexture, nullptr, pixels, windowWidth * 4);
   SDL_RenderCopy(sdlRenderer, gpuTexture, nullptr, nullptr);
 
   // Render HUD
-  hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS);
+  hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight);
 
   SDL_RenderPresent(sdlRenderer);
 }
@@ -181,9 +200,47 @@ void Application::prepareCameraData(CameraData &data) {
   data.fov = camera->fov;
 }
 
+void Application::toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  SDL_SetWindowFullscreen(window, isFullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+  
+  // Get new window size after fullscreen toggle
+  SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+  handleWindowResize(windowWidth, windowHeight);
+  
+  std::cout << "Fullscreen: " << (isFullscreen ? "ON" : "OFF") << std::endl;
+}
+
+void Application::handleWindowResize(int width, int height) {
+  if (width == windowWidth && height == windowHeight) {
+    return; // No change
+  }
+  
+  windowWidth = width;
+  windowHeight = height;
+  
+  std::cout << "Window resized to: " << width << " × " << height << std::endl;
+  recreateRenderTargets();
+}
+
+void Application::recreateRenderTargets() {
+  // Resize Metal renderer
+  metal_rt_renderer_resize(gpuRenderer, windowWidth, windowHeight);
+  
+  // Recreate SDL texture
+  if (gpuTexture) {
+    SDL_DestroyTexture(gpuTexture);
+  }
+  gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                  SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
+  
+  updateWindowTitle();
+}
+
 void Application::updateWindowTitle() {
   std::string title = "Black Hole Simulation | GPU | " +
                       std::string(cinematicCamera->getModeName()) +
+                      " | " + std::to_string(windowWidth) + "×" + std::to_string(windowHeight) +
                       " | FPS: " + std::to_string(currentFPS);
   SDL_SetWindowTitle(window, title.c_str());
 }

@@ -12,7 +12,7 @@ public:
   HUD(SDL_Renderer *renderer, TTF_Font *font);
   
   // Render the hints overlay
-  void renderHints(bool showHints, CinematicMode mode, int fps);
+  void renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight);
   
   // Toggle hints visibility
   void toggleHints() { hintsVisible = !hintsVisible; }

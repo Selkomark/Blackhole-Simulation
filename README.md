@@ -7,12 +7,15 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 ## Features
 
 - **GPU Accelerated**: Real-time Metal compute shader ray tracing for maximum performance
+- **Dynamic Resolution**: Renders at any window size, adapts to screen resolution
+- **Fullscreen Support**: Toggle fullscreen mode with F key, ESC to exit
+- **Resizable Window**: Drag window edges to resize, rendering adapts automatically
 - **Accurate Physics**: Schwarzschild metric geodesic integration using RK4 (Runge-Kutta 4th order)
 - **Gravitational Lensing**: Light rays bend according to general relativity equations
 - **Volumetric Rendering**: Realistic accretion disk with white-hot temperature gradients
 - **Cinematic Camera**: 5 cinematic modes including smooth orbit, wave motion, rising spiral, and close fly-by
 - **Continuous Animation**: Camera is always in motion for dynamic viewing experience
-- **Real-time Performance**: 30+ FPS at 1920×1080 on Apple Silicon
+- **Real-time Performance**: 30+ FPS at any resolution on Apple Silicon
 
 ## Prerequisites
 
@@ -119,6 +122,7 @@ If you're using VS Code, you can use the built-in tasks:
 
 | Key | Action |
 |-----|--------|
+| **F** | Toggle fullscreen mode |
 | **C** | Cycle through cinematic camera modes |
 | **W** | Move camera forward (Manual mode only) |
 | **A** | Move camera left (Manual mode only) |
@@ -128,7 +132,8 @@ If you're using VS Code, you can use the built-in tasks:
 | **Shift** | Move camera down (Manual mode only) |
 | **R** | Reset camera position |
 | **Tab** | Toggle control hints overlay |
-| **ESC** or **Q** | Quit simulation |
+| **ESC** | Exit fullscreen (if in fullscreen) or quit |
+| **Q** | Quit simulation |
 
 ### Cinematic Camera Modes
 

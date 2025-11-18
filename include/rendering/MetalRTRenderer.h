@@ -23,6 +23,9 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height);
 // Destroy Metal renderer
 void metal_rt_renderer_destroy(MetalRTRenderer *renderer);
 
+// Resize renderer (recreates textures and buffers)
+void metal_rt_renderer_resize(MetalRTRenderer *renderer, int width, int height);
+
 // Render a frame
 void metal_rt_renderer_render(MetalRTRenderer *renderer,
                               const CameraData *camera, float time);

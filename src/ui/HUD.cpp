@@ -4,14 +4,22 @@
 HUD::HUD(SDL_Renderer *renderer, TTF_Font *font)
     : renderer(renderer), font(font), hintsVisible(true) {}
 
-void HUD::renderHints(bool showHints, CinematicMode mode, int fps) {
+void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight) {
   if (!showHints || !font)
     return;
 
+  // Scale overlay size based on window size (maintain aspect ratio)
+  int overlayWidth = std::min(500, windowWidth / 4);
+  int overlayHeight = 220;
+  int padding = 10;
+  
+  // Use windowHeight to ensure overlay doesn't exceed screen bounds
+  (void)windowHeight; // Suppress unused parameter warning
+  
   // Semi-transparent background
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-  SDL_Rect overlay = {10, 10, 500, 220};
+  SDL_Rect overlay = {padding, padding, overlayWidth, overlayHeight};
   SDL_RenderFillRect(renderer, &overlay);
 
   // Border

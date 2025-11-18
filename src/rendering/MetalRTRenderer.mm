@@ -128,6 +128,34 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
   }
 }
 
+void metal_rt_renderer_resize(MetalRTRenderer *renderer, int width, int height) {
+  if (!renderer) return;
+  
+  @autoreleasepool {
+    renderer->width = width;
+    renderer->height = height;
+    renderer->pixelData.resize(width * height * 4);
+    
+    // Recreate output texture with new size
+    MTLTextureDescriptor *textureDesc = [MTLTextureDescriptor
+        texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                     width:width
+                                    height:height
+                                 mipmapped:NO];
+    textureDesc.usage = MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead;
+    textureDesc.storageMode = MTLStorageModeShared;
+    renderer->outputTexture =
+        [renderer->device newTextureWithDescriptor:textureDesc];
+    
+    if (!renderer->outputTexture) {
+      NSLog(@"Failed to resize Metal renderer texture to %dx%d", width, height);
+      return;
+    }
+    
+    NSLog(@"Metal renderer resized to %dx%d", width, height);
+  }
+}
+
 void metal_rt_renderer_destroy(MetalRTRenderer *renderer) {
   if (renderer) {
     delete renderer;
