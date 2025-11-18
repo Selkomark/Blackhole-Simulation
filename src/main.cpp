@@ -1,20 +1,21 @@
+#include "../include/BlackHole.hpp"
 #include "../include/MetalRTRenderer.h"
+#include "../include/Renderer.hpp"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <chrono>
 #include <cmath>
 #include <iostream>
-#include <numbers>
 
 void renderTextHints(SDL_Renderer *renderer, TTF_Font *font, bool showHints,
-                     int width) {
-  if (!showHints)
+                     bool useGPU, int fps) {
+  if (!showHints || !font)
     return;
 
   // Semi-transparent background
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-  SDL_Rect overlay = {10, 10, 450, 180};
+  SDL_Rect overlay = {10, 10, 500, 220};
   SDL_RenderFillRect(renderer, &overlay);
 
   // Border
@@ -24,26 +25,33 @@ void renderTextHints(SDL_Renderer *renderer, TTF_Font *font, bool showHints,
   // Render text
   SDL_Color textColor = {255, 255, 255, 255};
   SDL_Color highlightColor = {100, 200, 255, 255};
+  SDL_Color gpuColor = {255, 100, 100, 255};
 
-  const char *hints[] = {"CONTROLS:",
+  std::string hints[] = {"CONTROLS:",
                          "WASD - Move Camera",
                          "Space/Shift - Up/Down",
                          "P - Toggle Auto-Orbit",
                          "R - Reset Camera",
+                         "G - Toggle CPU/GPU (" +
+                             std::string(useGPU ? "GPU" : "CPU") + ")",
                          "Tab - Toggle This Help",
-                         "ESC/Q - Quit"};
+                         "ESC/Q - Quit",
+                         "FPS: " + std::to_string(fps)};
 
   int y = 20;
-  for (int i = 0; i < 7; i++) {
-    SDL_Surface *surface = TTF_RenderText_Blended(
-        font, hints[i], i == 0 ? highlightColor : textColor);
+  for (int i = 0; i < 9; i++) {
+    SDL_Color color = (i == 0)   ? highlightColor
+                      : (i == 5) ? (useGPU ? gpuColor : textColor)
+                                 : textColor;
+    SDL_Surface *surface =
+        TTF_RenderText_Blended(font, hints[i].c_str(), color);
     if (surface) {
       SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
       SDL_Rect destRect = {20, y, surface->w, surface->h};
       SDL_RenderCopy(renderer, texture, nullptr, &destRect);
       SDL_DestroyTexture(texture);
       SDL_FreeSurface(surface);
-      y += 25;
+      y += 24;
     }
   }
 }
@@ -61,12 +69,11 @@ int main(int, char **) {
     return 1;
   }
 
-  // 4K Resolution
-  const int WIDTH = 3840;
-  const int HEIGHT = 2160;
+  const int WIDTH = 1920;
+  const int HEIGHT = 1080;
 
   SDL_Window *window =
-      SDL_CreateWindow("Black Hole Simulation - Metal GPU (4K)",
+      SDL_CreateWindow("Black Hole Simulation - CPU/GPU Toggle",
                        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH,
                        HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (window == nullptr) {
@@ -78,17 +85,15 @@ int main(int, char **) {
   SDL_Renderer *sdlRenderer = SDL_CreateRenderer(
       window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-  // Load font
   TTF_Font *font = TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", 18);
   if (!font) {
     std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError()
               << std::endl;
-    font = nullptr; // Continue without text
   }
 
-  // Print controls to console
-  std::cout << "\n=== BLACK HOLE SIMULATION - METAL GPU ===\n";
-  std::cout << "Resolution: 4K (3840 × 2160)\n";
+  std::cout << "\n=== BLACK HOLE SIMULATION - CPU/GPU TOGGLE ===\n";
+  std::cout << "Resolution: 1920 × 1080\n";
+  std::cout << "G          - Toggle CPU/GPU rendering\n";
   std::cout << "WASD       - Move camera\n";
   std::cout << "Space      - Move camera up\n";
   std::cout << "Shift      - Move camera down\n";
@@ -96,30 +101,28 @@ int main(int, char **) {
   std::cout << "R          - Reset camera position\n";
   std::cout << "Tab        - Toggle hints overlay\n";
   std::cout << "ESC/Q      - Quit\n";
-  std::cout << "=========================================\n\n";
+  std::cout << "===========================================\n\n";
 
-  // Initialize Metal Renderer
-  MetalRTRenderer *metalRenderer = metal_rt_renderer_create(WIDTH, HEIGHT);
-  if (!metalRenderer) {
-    std::cerr << "Failed to create Metal renderer!" << std::endl;
-    return 1;
+  // Initialize both renderers
+  BlackHole bh(1.0);
+  Vector3 initialPos(0, 3, -15);
+  Camera cam(initialPos, Vector3(0, 0, 0), 60.0);
+  Renderer cpuRenderer(WIDTH, HEIGHT, sdlRenderer);
+
+  MetalRTRenderer *gpuRenderer = metal_rt_renderer_create(WIDTH, HEIGHT);
+  SDL_Texture *gpuTexture = nullptr;
+  if (gpuRenderer) {
+    gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ABGR8888,
+                                   SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+    std::cout << "GPU renderer initialized\n";
+  } else {
+    std::cout << "GPU renderer failed to initialize, CPU only mode\n";
   }
-
-  // Create SDL texture for display (ABGR8888 matches Metal's RGBA8Unorm byte
-  // order on little-endian)
-  SDL_Texture *displayTexture =
-      SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ABGR8888,
-                        SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
-
-  // Initialize Camera
-  CameraData camera;
-  float initialPos[3] = {0.0f, 3.0f, -15.0f};
-  memcpy(camera.position, initialPos, sizeof(float) * 3);
-  camera.fov = 60.0f;
 
   bool quit = false;
   bool autoOrbit = true;
   bool showHints = true;
+  bool useGPU = false; // Start with CPU
   double orbitAngle = 0.0;
   double orbitRadius = 15.0;
   double orbitHeight = 3.0;
@@ -129,18 +132,16 @@ int main(int, char **) {
   auto lastTime = std::chrono::high_resolution_clock::now();
   int frameCount = 0;
   double fpsUpdateTime = 0.0;
-  double currentFPS = 0.0;
+  int currentFPS = 0;
 
   while (!quit) {
     auto currentTime = std::chrono::high_resolution_clock::now();
     double deltaTime =
         std::chrono::duration<double>(currentTime - lastTime).count();
     lastTime = currentTime;
-
     double elapsedTime =
         std::chrono::duration<double>(currentTime - startTime).count();
 
-    // Handle Input
     while (SDL_PollEvent(&e) != 0) {
       if (e.type == SDL_QUIT) {
         quit = true;
@@ -156,7 +157,7 @@ int main(int, char **) {
                     << std::endl;
           break;
         case SDLK_r:
-          memcpy(camera.position, initialPos, sizeof(float) * 3);
+          cam.position = initialPos;
           orbitAngle = 0.0;
           std::cout << "Camera reset" << std::endl;
           break;
@@ -164,48 +165,45 @@ int main(int, char **) {
           showHints = !showHints;
           std::cout << "Hints: " << (showHints ? "ON" : "OFF") << std::endl;
           break;
+        case SDLK_g:
+          if (gpuRenderer) {
+            useGPU = !useGPU;
+            std::cout << "Switched to " << (useGPU ? "GPU" : "CPU")
+                      << " rendering" << std::endl;
+          } else {
+            std::cout << "GPU renderer not available" << std::endl;
+          }
+          break;
         }
       }
     }
 
     const Uint8 *currentKeyStates = SDL_GetKeyboardState(nullptr);
-    float moveSpeed = 5.0f * deltaTime;
+    double moveSpeed = 5.0 * deltaTime;
 
-    // Manual controls
     bool manualMovement = false;
-    float forward[3] = {camera.forward[0], camera.forward[1],
-                        camera.forward[2]};
-    float right[3] = {camera.right[0], camera.right[1], camera.right[2]};
-    float up[3] = {camera.up[0], camera.up[1], camera.up[2]};
-
     if (currentKeyStates[SDL_SCANCODE_W]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] += forward[i] * moveSpeed;
+      cam.position += cam.forward * moveSpeed;
       manualMovement = true;
     }
     if (currentKeyStates[SDL_SCANCODE_S]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] -= forward[i] * moveSpeed;
+      cam.position -= cam.forward * moveSpeed;
       manualMovement = true;
     }
     if (currentKeyStates[SDL_SCANCODE_A]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] -= right[i] * moveSpeed;
+      cam.position -= cam.right * moveSpeed;
       manualMovement = true;
     }
     if (currentKeyStates[SDL_SCANCODE_D]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] += right[i] * moveSpeed;
+      cam.position += cam.right * moveSpeed;
       manualMovement = true;
     }
     if (currentKeyStates[SDL_SCANCODE_SPACE]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] += up[i] * moveSpeed;
+      cam.position += cam.up * moveSpeed;
       manualMovement = true;
     }
     if (currentKeyStates[SDL_SCANCODE_LSHIFT]) {
-      for (int i = 0; i < 3; i++)
-        camera.position[i] -= up[i] * moveSpeed;
+      cam.position -= cam.up * moveSpeed;
       manualMovement = true;
     }
 
@@ -214,58 +212,49 @@ int main(int, char **) {
       std::cout << "Auto-orbit disabled (manual control)" << std::endl;
     }
 
-    // Auto-orbit
     if (autoOrbit) {
       orbitAngle += 0.3 * deltaTime;
-      camera.position[0] = std::cos(orbitAngle) * orbitRadius;
-      camera.position[2] = std::sin(orbitAngle) * orbitRadius;
-      camera.position[1] = orbitHeight;
+      cam.position.x = std::cos(orbitAngle) * orbitRadius;
+      cam.position.z = std::sin(orbitAngle) * orbitRadius;
+      cam.position.y = orbitHeight;
     }
 
-    // Update camera vectors (look at origin)
-    float len = std::sqrt(camera.position[0] * camera.position[0] +
-                          camera.position[1] * camera.position[1] +
-                          camera.position[2] * camera.position[2]);
-    camera.forward[0] = -camera.position[0] / len;
-    camera.forward[1] = -camera.position[1] / len;
-    camera.forward[2] = -camera.position[2] / len;
+    cam.forward = (Vector3(0, 0, 0) - cam.position).normalized();
+    cam.right = cam.forward.cross(Vector3(0, 1, 0)).normalized();
+    cam.up = cam.right.cross(cam.forward).normalized();
 
-    float worldUp[3] = {0.0f, 1.0f, 0.0f};
-    camera.right[0] =
-        camera.forward[1] * worldUp[2] - camera.forward[2] * worldUp[1];
-    camera.right[1] =
-        camera.forward[2] * worldUp[0] - camera.forward[0] * worldUp[2];
-    camera.right[2] =
-        camera.forward[0] * worldUp[1] - camera.forward[1] * worldUp[0];
-    len = std::sqrt(camera.right[0] * camera.right[0] +
-                    camera.right[1] * camera.right[1] +
-                    camera.right[2] * camera.right[2]);
-    camera.right[0] /= len;
-    camera.right[1] /= len;
-    camera.right[2] /= len;
-
-    camera.up[0] = camera.right[1] * camera.forward[2] -
-                   camera.right[2] * camera.forward[1];
-    camera.up[1] = camera.right[2] * camera.forward[0] -
-                   camera.right[0] * camera.forward[2];
-    camera.up[2] = camera.right[0] * camera.forward[1] -
-                   camera.right[1] * camera.forward[0];
-
-    // Render with Metal
-    metal_rt_renderer_render(metalRenderer, &camera, elapsedTime);
-
-    // Update SDL texture
-    const void *pixels = metal_rt_renderer_get_pixels(metalRenderer);
-    SDL_UpdateTexture(displayTexture, nullptr, pixels, WIDTH * 4);
-
-    // Display
+    // Render
     SDL_RenderClear(sdlRenderer);
-    SDL_RenderCopy(sdlRenderer, displayTexture, nullptr, nullptr);
+
+    if (useGPU && gpuRenderer) {
+      // GPU rendering
+      CameraData gpuCam;
+      gpuCam.position[0] = cam.position.x;
+      gpuCam.position[1] = cam.position.y;
+      gpuCam.position[2] = cam.position.z;
+      gpuCam.forward[0] = cam.forward.x;
+      gpuCam.forward[1] = cam.forward.y;
+      gpuCam.forward[2] = cam.forward.z;
+      gpuCam.right[0] = cam.right.x;
+      gpuCam.right[1] = cam.right.y;
+      gpuCam.right[2] = cam.right.z;
+      gpuCam.up[0] = cam.up.x;
+      gpuCam.up[1] = cam.up.y;
+      gpuCam.up[2] = cam.up.z;
+      gpuCam.fov = cam.fov;
+
+      metal_rt_renderer_render(gpuRenderer, &gpuCam, elapsedTime);
+      const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
+      SDL_UpdateTexture(gpuTexture, nullptr, pixels, WIDTH * 4);
+      SDL_RenderCopy(sdlRenderer, gpuTexture, nullptr, nullptr);
+    } else {
+      // CPU rendering
+      cpuRenderer.render(bh, cam);
+      cpuRenderer.updateTexture();
+    }
 
     // Render hints
-    if (font) {
-      renderTextHints(sdlRenderer, font, showHints, WIDTH);
-    }
+    renderTextHints(sdlRenderer, font, showHints, useGPU, currentFPS);
 
     SDL_RenderPresent(sdlRenderer);
 
@@ -273,20 +262,23 @@ int main(int, char **) {
     frameCount++;
     fpsUpdateTime += deltaTime;
     if (fpsUpdateTime >= 0.5) {
-      currentFPS = frameCount / fpsUpdateTime;
+      currentFPS = (int)(frameCount / fpsUpdateTime);
       frameCount = 0;
       fpsUpdateTime = 0.0;
 
-      std::string title = "Black Hole Simulation - Metal GPU (4K) | FPS: " +
-                          std::to_string((int)currentFPS) +
+      std::string title = "Black Hole Simulation | " +
+                          std::string(useGPU ? "GPU" : "CPU") +
+                          " | FPS: " + std::to_string(currentFPS) +
                           " | Auto-orbit: " + (autoOrbit ? "ON" : "OFF");
       SDL_SetWindowTitle(window, title.c_str());
     }
   }
 
   // Cleanup
-  metal_rt_renderer_destroy(metalRenderer);
-  SDL_DestroyTexture(displayTexture);
+  if (gpuRenderer)
+    metal_rt_renderer_destroy(gpuRenderer);
+  if (gpuTexture)
+    SDL_DestroyTexture(gpuTexture);
   if (font)
     TTF_CloseFont(font);
   SDL_DestroyRenderer(sdlRenderer);
