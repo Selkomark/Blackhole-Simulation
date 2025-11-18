@@ -4,16 +4,22 @@ using namespace metal;
 // Constants
 constant float RS = 2.0; // Schwarzschild radius (mass = 1.0)
 constant float PI = 3.14159265359;
+constant float STEP_SIZE = 0.1;
+constant float MAX_DIST = 100.0;
+constant float MIN_STEP = 0.02;
+constant float MAX_STEP = 0.5;
 
 // Structures matching C++ layout
+// Note: Metal float3 is 16-byte aligned, but C++ uses float[3] which is 12 bytes
+// So we use packed_float3 or match the exact C++ layout
 struct Camera {
-    float3 position;
+    packed_float3 position;
     float _pad0;
-    float3 forward;
+    packed_float3 forward;
     float _pad1;
-    float3 right;
+    packed_float3 right;
     float _pad2;
-    float3 up;
+    packed_float3 up;
     float fov;
 };
 
@@ -88,16 +94,27 @@ float disk_density(float3 pos) {
     return noise * fade * exp(-abs(pos.y) * 10.0);
 }
 
-// Disk color based on temperature
+// Disk color based on temperature - White hot palette
 float3 disk_color(float density, float r) {
-    float3 hot = float3(0.8, 0.9, 1.0);
-    float3 cold = float3(1.0, 0.3, 0.0);
+    // Hot inner: Pure white
+    float3 hot = float3(1.0, 1.0, 1.0);      // Pure white
+    // Mid: Slightly warm white
+    float3 mid = float3(1.0, 0.95, 0.9);     // Warm white
+    // Cold outer: Dim white/gray
+    float3 cold = float3(0.7, 0.65, 0.6);    // Dim warm gray
     
     float t = (r - RS * 2.5) / (RS * 9.5);
     t = clamp(t, 0.0, 1.0);
     
-    float3 base_color = mix(hot, cold, t);
-    return base_color * density * 2.0;
+    // Blend between hot, mid, and cold
+    float3 base_color;
+    if (t < 0.5) {
+        base_color = mix(hot, mid, t * 2.0);
+    } else {
+        base_color = mix(mid, cold, (t - 0.5) * 2.0);
+    }
+    
+    return base_color * density * 3.5;
 }
 
 // Background starfield
@@ -105,19 +122,65 @@ float3 sample_background(float3 dir) {
     float u = 0.5 + atan2(dir.z, dir.x) / (2.0 * PI);
     float v = 0.5 - asin(dir.y) / PI;
     
-    float3 color = float3(0.0);
+    float3 color = float3(0.0);  // Pure black background
     
-    // Galaxy band
-    float band = exp(-abs(dir.y) * 5.0);
-    color += float3(0.5, 0.6, 0.8) * band * 0.5;
-    
-    // Stars (hash)
-    uint hash = uint(u * 4000) * 19349663u + uint(v * 4000) * 83492791u;
+    // Stars only (no galaxy band)
+    uint hash = uint(u * 4000.0) * 19349663u + uint(v * 4000.0) * 83492791u;
     if ((hash % 1000u) < 2u) {
         color += float3(1.0) * (0.5 + float(hash % 100u) / 200.0);
     }
     
     return color;
+}
+
+// Full volumetric ray tracing
+float3 trace_ray(float3 origin, float3 direction) {
+    float3 pos = origin;
+    float3 vel = direction;
+    
+    float3 accumulatedColor = float3(0.0);
+    float transmittance = 1.0;
+    float totalDist = 0.0;
+    
+    while (totalDist < MAX_DIST && transmittance > 0.01) {
+        float r2 = dot(pos, pos);
+        
+        // Event Horizon
+        if (r2 < RS * RS) {
+            return accumulatedColor; // Black (absorbed)
+        }
+        
+        // Volumetric Accretion Disk Integration
+        float density = disk_density(pos);
+        if (density > 0.001) {
+            float r = sqrt(r2);
+            float3 emission = disk_color(density, r);
+            float absorption = density * 0.5;
+            
+            // Beer's Law integration for this step
+            float dt = STEP_SIZE; // Approximation
+            float stepTransmittance = exp(-absorption * dt);
+            
+            accumulatedColor += emission * transmittance * (1.0 - stepTransmittance);
+            transmittance *= stepTransmittance;
+        }
+        
+        // Adaptive Step
+        float r = sqrt(r2);
+        float dt = STEP_SIZE * (r / (RS * 2.0 + 0.1));
+        if (dt < MIN_STEP) dt = MIN_STEP;
+        if (dt > MAX_STEP) dt = MAX_STEP;
+        
+        // RK4 integration
+        rk4_step(pos, vel, dt);
+        
+        totalDist += dt;
+    }
+    
+    // Add background if ray escapes
+    accumulatedColor += sample_background(vel) * transmittance;
+    
+    return accumulatedColor;
 }
 
 // Ray generation kernel
@@ -130,10 +193,52 @@ kernel void ray_generation(
         return;
     }
     
-    // Simple test pattern - checkerboard
-    float checker = float((tid.x / 32 + tid.y / 32) % 2);
-    float3 color = float3(checker, 0.5, 1.0 - checker);
+    // Debug: Check if camera data is valid
+    // packed_float3 can be implicitly converted to float3
+    float3 camPos = float3(uniforms.camera.position);
+    float3 camForward = float3(uniforms.camera.forward);
     
-    // Write output
+    // Check for invalid camera data (all zeros)
+    if (length(camPos) < 0.001 && length(camForward) < 0.001) {
+        // Invalid camera - output red to indicate error
+        output_texture.write(float4(1.0, 0.0, 0.0, 1.0), tid);
+        return;
+    }
+    
+    // Calculate aspect ratio and FOV
+    float aspectRatio = float(uniforms.resolution.x) / float(uniforms.resolution.y);
+    float fovRad = uniforms.camera.fov * PI / 180.0;
+    float scale = tan(fovRad * 0.5);
+    
+    // Calculate pixel coordinates in normalized space
+    float px = (2.0 * (float(tid.x) + 0.5) / float(uniforms.resolution.x) - 1.0) * aspectRatio * scale;
+    float py = (1.0 - 2.0 * (float(tid.y) + 0.5) / float(uniforms.resolution.y)) * scale;
+    
+    // Calculate ray direction
+    float3 forward = float3(uniforms.camera.forward);
+    float3 right = float3(uniforms.camera.right);
+    float3 up = float3(uniforms.camera.up);
+    float3 dir = normalize(forward + right * px + up * py);
+    
+    // Trace ray
+    float3 origin = float3(uniforms.camera.position);
+    float3 color = trace_ray(origin, dir);
+    
+    // Check if color is valid (not NaN or Inf)
+    if (isnan(color.x) || isnan(color.y) || isnan(color.z) ||
+        isinf(color.x) || isinf(color.y) || isinf(color.z)) {
+        color = float3(0.0, 1.0, 0.0); // Green for NaN/Inf
+    }
+    
+    // Tone mapping (simple reinhard)
+    color = color / (color + float3(1.0));
+    
+    // Gamma correction
+    color.x = pow(max(color.x, 0.0), 1.0 / 2.2);
+    color.y = pow(max(color.y, 0.0), 1.0 / 2.2);
+    color.z = pow(max(color.z, 0.0), 1.0 / 2.2);
+    
+    // Clamp
+    color = clamp(color, float3(0.0), float3(1.0));
     output_texture.write(float4(color, 1.0), tid);
 }

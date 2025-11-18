@@ -1,48 +1,87 @@
-CXX = clang++
-OBJCXX = clang++
-CXXFLAGS = -std=c++20 -O3 -Wall -Wextra -I./vcpkg/installed/arm64-osx/include
-OBJCXXFLAGS = -std=c++20 -O3 -Wall -Wextra -I./vcpkg/installed/arm64-osx/include -fobjc-arc
-LDFLAGS = -L./vcpkg/installed/arm64-osx/lib -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon -Wl,-rpath,./vcpkg/installed/arm64-osx/lib \
-          -framework Cocoa -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox \
-          -framework ForceFeedback -framework Carbon -framework Metal -framework MetalKit -framework Foundation \
-          -framework GameController -framework CoreHaptics -liconv
+# Compiler and flags
+CXX := clang++
+CXXFLAGS := -std=c++20 -O3 -Wall -Wextra
+OBJC_FLAGS := -fobjc-arc
 
-SRC_DIR = src
-SHADER_DIR = shaders
-BUILD_DIR = build
-TARGET = blackhole_sim
+# vcpkg configuration
+VCPKG_INSTALLED := ./vcpkg/installed/arm64-osx
+INCLUDES := -I$(VCPKG_INSTALLED)/include
+LDFLAGS := -L$(VCPKG_INSTALLED)/lib
+LIBS := -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon
+RPATH := -Wl,-rpath,$(VCPKG_INSTALLED)/lib
 
-CPP_SRCS = $(wildcard $(SRC_DIR)/*.cpp)
-MM_SRCS = $(wildcard $(SRC_DIR)/*.mm)
-CPP_OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(CPP_SRCS))
-MM_OBJS = $(patsubst $(SRC_DIR)/%.mm, $(BUILD_DIR)/%.o, $(MM_SRCS))
-OBJS = $(CPP_OBJS) $(MM_OBJS)
+# macOS frameworks
+FRAMEWORKS := -framework Cocoa -framework IOKit -framework CoreVideo \
+              -framework CoreAudio -framework AudioToolbox -framework ForceFeedback \
+              -framework Carbon -framework Metal -framework MetalKit \
+              -framework Foundation -framework GameController -framework CoreHaptics \
+              -liconv
 
-METAL_SRC = $(SHADER_DIR)/RayTracing.metal
-METAL_AIR = $(BUILD_DIR)/RayTracing.air
-METAL_LIB = $(BUILD_DIR)/default.metallib
+# Directories
+BUILD_DIR := build
+SRC_DIR := src
+SHADER_DIR := shaders
 
-all: $(METAL_LIB) $(TARGET)
+# Source files organized by module
+SOURCES := \
+	$(SRC_DIR)/main.cpp \
+	$(SRC_DIR)/core/Application.cpp \
+	$(SRC_DIR)/camera/Camera.cpp \
+	$(SRC_DIR)/camera/CinematicCamera.cpp \
+	$(SRC_DIR)/ui/HUD.cpp \
+	$(SRC_DIR)/physics/BlackHole.cpp \
+	$(SRC_DIR)/rendering/MetalRTRenderer.mm
 
-$(METAL_AIR): $(METAL_SRC)
-	@mkdir -p $(BUILD_DIR)
-	xcrun -sdk macosx metal -c $(METAL_SRC) -o $(METAL_AIR)
+# Object files
+OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SOURCES)))
+OBJECTS += $(patsubst $(SRC_DIR)/%.mm,$(BUILD_DIR)/%.o,$(filter %.mm,$(SOURCES)))
+
+# Metal shader files
+METAL_SOURCE := $(SHADER_DIR)/RayTracing.metal
+METAL_AIR := $(BUILD_DIR)/RayTracing.air
+METAL_LIB := $(BUILD_DIR)/default.metallib
+
+# Output executable
+TARGET := blackhole_sim
+
+# Default target
+all: $(TARGET)
+
+# Create build directory structure
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/camera $(BUILD_DIR)/ui \
+	          $(BUILD_DIR)/physics $(BUILD_DIR)/rendering
+
+# Compile Metal shaders
+$(METAL_AIR): $(METAL_SOURCE) | $(BUILD_DIR)
+	xcrun -sdk macosx metal -c $< -o $@
 
 $(METAL_LIB): $(METAL_AIR)
-	xcrun -sdk macosx metallib $(METAL_AIR) -o $(METAL_LIB)
+	xcrun -sdk macosx metallib $< -o $@
 
-$(TARGET): $(OBJS)
-	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+# Compile C++ source files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+# Compile Objective-C++ files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.mm | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(OBJC_FLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.mm
-	@mkdir -p $(BUILD_DIR)
-	$(OBJCXX) $(OBJCXXFLAGS) -c $< -o $@
+# Link executable
+$(TARGET): $(METAL_LIB) $(OBJECTS)
+	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS) $(LIBS) $(RPATH) $(FRAMEWORKS)
 
+# Run the simulation
+run: $(TARGET)
+	./$(TARGET)
+
+# Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
 
-.PHONY: all clean
+# Rebuild from scratch
+rebuild: clean all
+
+.PHONY: all run clean rebuild

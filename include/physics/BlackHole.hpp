@@ -1,5 +1,5 @@
 #pragma once
-#include "Vector3.hpp"
+#include "../utils/Vector3.hpp"
 #include <vector>
 
 class BlackHole {

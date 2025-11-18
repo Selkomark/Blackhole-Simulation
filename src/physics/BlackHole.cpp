@@ -1,4 +1,4 @@
-#include "../include/BlackHole.hpp"
+#include "../../include/physics/BlackHole.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -42,30 +42,35 @@ double BlackHole::diskDensity(const Vector3 &pos) const {
 }
 
 Vector3 BlackHole::diskColor(double density, double r) const {
-  // Temperature gradient based on radius (hotter near BH)
-  // Hot: Blue/White, Cold: Red/Orange
-  Vector3 hot(0.8, 0.9, 1.0);
-  Vector3 cold(1.0, 0.3, 0.0);
+  // Temperature gradient based on radius - White hot palette
+  // Hot inner: Pure white
+  Vector3 hot(1.0, 1.0, 1.0);      // Pure white
+  // Mid: Slightly warm white
+  Vector3 mid(1.0, 0.95, 0.9);     // Warm white
+  // Cold outer: Dim white/gray
+  Vector3 cold(0.7, 0.65, 0.6);    // Dim warm gray
 
   double t = (r - rs * 2.5) / (rs * 9.5);
   t = std::clamp(t, 0.0, 1.0);
 
-  Vector3 baseColor = hot * (1.0 - t) + cold * t;
-  return baseColor * density * 2.0; // Intensity
+  // Blend between hot, mid, and cold
+  Vector3 baseColor;
+  if (t < 0.5) {
+    baseColor = hot * (1.0 - t * 2.0) + mid * (t * 2.0);
+  } else {
+    baseColor = mid * (1.0 - (t - 0.5) * 2.0) + cold * ((t - 0.5) * 2.0);
+  }
+
+  return baseColor * density * 3.5;
 }
 
 Vector3 BlackHole::sampleBackground(const Vector3 &dir) const {
-  // Milky Way band
   double u = 0.5 + std::atan2(dir.z, dir.x) / (2 * std::numbers::pi);
   double v = 0.5 - std::asin(dir.y) / std::numbers::pi;
 
-  Vector3 color(0, 0, 0);
+  Vector3 color(0, 0, 0);  // Pure black background
 
-  // Galaxy Plane
-  double band = std::exp(-std::abs(dir.y) * 5.0);
-  color += Vector3(0.5, 0.6, 0.8) * band * 0.5;
-
-  // Stars (simple hash)
+  // Stars only (no galaxy band)
   uint32_t hash =
       (uint32_t)(u * 4000) * 19349663 + (uint32_t)(v * 4000) * 83492791;
   if ((hash % 1000) < 2) {

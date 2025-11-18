@@ -1,0 +1,73 @@
+# Cursor Rules for Black Hole Simulation
+
+## Automatic Build and Test on File Changes
+
+**IMPORTANT**: Whenever source files, shaders, or build configuration files are modified, you MUST automatically:
+
+1. **Build the project** using `make`
+2. **Run the simulation** using `make run` (capture output for a few seconds)
+3. **Monitor for errors** in compilation and runtime output
+4. **Report any issues** found immediately
+
+### Files That Trigger Automatic Testing:
+- Source files: `src/**/*.cpp`, `src/**/*.mm`, `include/**/*.hpp`
+- Shader files: `shaders/**/*.metal`
+- Build configuration: `Makefile`
+- Scripts: `*.sh` files
+
+### Error Detection Checklist:
+
+**Compilation Errors:**
+- ✓ Check `make` output for compiler errors
+- ✓ Check Metal shader compilation (`xcrun metal` errors)
+- ✓ Check linker errors
+- ✓ Verify all object files build successfully
+
+**Runtime Errors:**
+- ✓ Application starts without crashes
+- ✓ Metal renderer initializes successfully (check for "Metal renderer initialized successfully")
+- ✓ No "Invalid camera data" warnings
+- ✓ No red error pixels (indicates invalid camera)
+- ✓ No green pixels (indicates NaN/Inf color values)
+- ✓ Camera position/forward vectors are valid (non-zero)
+- ✓ FPS is reasonable (> 1 FPS)
+
+**Rendering Issues:**
+- ✓ No NaN/Inf color values in output
+- ✓ Colors are valid (not all black or all white unexpectedly)
+- ✓ Texture creation succeeds
+- ✓ Threadgroups calculated correctly
+
+### Testing Procedure:
+
+When files are modified:
+1. **Build**: Run `make` and check exit code
+2. **If build fails**: 
+   - Try `make clean && make`
+   - Report specific error messages
+   - Fix obvious issues if possible
+3. **If build succeeds**:
+   - Run `make run` in background
+   - Capture output for 10 seconds
+   - Parse output for warnings/errors
+   - Kill the process after monitoring
+4. **Report Results**:
+   - ✅ Success: "Build and run successful, no errors detected"
+   - ❌ Failure: List specific errors found
+   - ⚠️ Warnings: List any warnings that should be addressed
+
+### Common Issues to Watch For:
+
+- **Metal shader compilation errors**: Check `RayTracing.metal` syntax
+- **Invalid camera data**: Camera vectors are zero or invalid
+- **Color issues**: Blue tints, NaN/Inf values, incorrect colors
+- **Performance issues**: Very low FPS (< 5 FPS)
+- **Memory issues**: Crashes, leaks, or excessive memory usage
+- **Build system issues**: Missing dependencies, incorrect paths
+
+### Always Verify:
+- Both CPU and GPU rendering paths work
+- Colors match between CPU and GPU implementations
+- No blue color artifacts (should be yellow-white to orange-red)
+- Background is neutral (not overly blue)
+

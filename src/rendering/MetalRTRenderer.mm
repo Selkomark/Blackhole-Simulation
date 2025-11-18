@@ -1,4 +1,4 @@
-#include "../include/MetalRTRenderer.h"
+#include "../../include/rendering/MetalRTRenderer.h"
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
@@ -111,9 +111,18 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
     renderer->outputTexture =
         [renderer->device newTextureWithDescriptor:textureDesc];
 
+    if (!renderer->outputTexture) {
+      NSUInteger maxSize = [renderer->device supportsFamily:MTLGPUFamilyApple1] ? 16384 : 8192;
+      NSLog(@"Failed to create output texture at resolution %dx%d", width, height);
+      NSLog(@"Maximum texture size supported: %lu x %lu", (unsigned long)maxSize, (unsigned long)maxSize);
+      delete renderer;
+      return nullptr;
+    }
+
     NSLog(@"Metal renderer initialized successfully");
     NSLog(@"Resolution: %dx%d", width, height);
     NSLog(@"Texture format: RGBA8Unorm");
+    NSLog(@"Texture size: %lu bytes", (unsigned long)(width * height * 4));
 
     return renderer;
   }
@@ -138,6 +147,22 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
     uniforms->resolution[0] = renderer->width;
     uniforms->resolution[1] = renderer->height;
     uniforms->time = time;
+
+    // Debug: Log camera data (only first time)
+    static bool cameraLogged = false;
+    if (!cameraLogged) {
+      NSLog(@"Camera position: [%f, %f, %f]", 
+            camera->position[0], camera->position[1], camera->position[2]);
+      NSLog(@"Camera forward: [%f, %f, %f]", 
+            camera->forward[0], camera->forward[1], camera->forward[2]);
+      NSLog(@"Camera right: [%f, %f, %f]", 
+            camera->right[0], camera->right[1], camera->right[2]);
+      NSLog(@"Camera up: [%f, %f, %f]", 
+            camera->up[0], camera->up[1], camera->up[2]);
+      NSLog(@"Camera FOV: %f", camera->fov);
+      NSLog(@"Resolution: %d x %d", renderer->width, renderer->height);
+      cameraLogged = true;
+    }
 
     // Create command buffer
     id<MTLCommandBuffer> commandBuffer = [renderer->commandQueue commandBuffer];
@@ -176,17 +201,37 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
           (unsigned long)threadgroupSize.height);
 
     // Read back pixels
+    // Metal RGBA8Unorm stores as RGBA (R=byte0, G=byte1, B=byte2, A=byte3)
+    // SDL ARGB8888 expects ARGB (A=byte0, R=byte1, G=byte2, B=byte3) on little-endian
+    // So we need to convert: RGBA -> ARGB
+    size_t bytesPerRow = renderer->width * 4;
+    size_t totalBytes = bytesPerRow * renderer->height;
+    
+    // Temporary buffer for RGBA data
+    std::vector<uint8_t> tempBuffer(totalBytes);
     [renderer->outputTexture
-           getBytes:renderer->pixelData.data()
-        bytesPerRow:renderer->width * 4
+           getBytes:tempBuffer.data()
+        bytesPerRow:bytesPerRow
          fromRegion:MTLRegionMake2D(0, 0, renderer->width, renderer->height)
         mipmapLevel:0];
+    
+    // Convert RGBA to BGRA (SDL_PIXELFORMAT_ARGB8888 on little-endian is BGRA in memory)
+    uint8_t *rgba = tempBuffer.data();
+    uint8_t *bgra = renderer->pixelData.data();
+    size_t pixelCount = static_cast<size_t>(renderer->width) * static_cast<size_t>(renderer->height);
+    for (size_t i = 0; i < pixelCount; i++) {
+      size_t idx = i * 4;
+      bgra[idx + 0] = rgba[idx + 2]; // B (from RGBA B)
+      bgra[idx + 1] = rgba[idx + 1]; // G (from RGBA G)
+      bgra[idx + 2] = rgba[idx + 0]; // R (from RGBA R)
+      bgra[idx + 3] = rgba[idx + 3]; // A (from RGBA A)
+    }
 
     // Debug: Check first pixel
     static bool logged = false;
     if (!logged) {
       uint8_t *pixels = renderer->pixelData.data();
-      NSLog(@"First pixel RGBA: %d %d %d %d", pixels[0], pixels[1], pixels[2],
+      NSLog(@"First pixel ARGB: %d %d %d %d", pixels[0], pixels[1], pixels[2],
             pixels[3]);
       logged = true;
     }
