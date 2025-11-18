@@ -59,14 +59,10 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
     if ([[NSFileManager defaultManager] fileExistsAtPath:libraryPath]) {
       NSURL *libraryURL = [NSURL fileURLWithPath:libraryPath];
       library = [renderer->device newLibraryWithURL:libraryURL error:&error];
-      if (library) {
-        NSLog(@"Loaded Metal library from: %@", libraryPath);
-      }
     }
 
     // Fallback to default library
     if (!library) {
-      NSLog(@"Trying default library...");
       library = [renderer->device newDefaultLibrary];
     }
 
@@ -119,10 +115,7 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
       return nullptr;
     }
 
-    NSLog(@"Metal renderer initialized successfully");
-    NSLog(@"Resolution: %dx%d", width, height);
-    NSLog(@"Texture format: RGBA8Unorm");
-    NSLog(@"Texture size: %lu bytes", (unsigned long)(width * height * 4));
+    // Initialization logging removed for performance
 
     return renderer;
   }
@@ -152,7 +145,7 @@ void metal_rt_renderer_resize(MetalRTRenderer *renderer, int width, int height) 
       return;
     }
     
-    NSLog(@"Metal renderer resized to %dx%d", width, height);
+    // Resize logging removed for performance
   }
 }
 
@@ -174,23 +167,16 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
     uniforms->camera.fov = camera->fov;
     uniforms->resolution[0] = renderer->width;
     uniforms->resolution[1] = renderer->height;
+    // Always update time - this drives the black hole animation
+    // Even if camera doesn't move, time must advance for animation
     uniforms->time = time;
-
-    // Debug: Log camera data (only first time)
-    static bool cameraLogged = false;
-    if (!cameraLogged) {
-      NSLog(@"Camera position: [%f, %f, %f]", 
-            camera->position[0], camera->position[1], camera->position[2]);
-      NSLog(@"Camera forward: [%f, %f, %f]", 
-            camera->forward[0], camera->forward[1], camera->forward[2]);
-      NSLog(@"Camera right: [%f, %f, %f]", 
-            camera->right[0], camera->right[1], camera->right[2]);
-      NSLog(@"Camera up: [%f, %f, %f]", 
-            camera->up[0], camera->up[1], camera->up[2]);
-      NSLog(@"Camera FOV: %f", camera->fov);
-      NSLog(@"Resolution: %d x %d", renderer->width, renderer->height);
-      cameraLogged = true;
+    
+    // Ensure time is valid (not NaN or Inf)
+    if (!isfinite(uniforms->time)) {
+      uniforms->time = 0.0f;
     }
+
+    // Camera data logging removed for performance
 
     // Create command buffer
     id<MTLCommandBuffer> commandBuffer = [renderer->commandQueue commandBuffer];
@@ -213,20 +199,17 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
             threadsPerThreadgroup:threadgroupSize];
     [encoder endEncoding];
 
-    // Commit and wait
+    // Commit and wait - this ensures the frame is fully rendered
+    // Note: waitUntilCompleted ensures we have valid pixel data
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
+    
+    // Time verification removed for performance
 
     // Check for errors
     if (commandBuffer.error) {
       NSLog(@"Command buffer error: %@", commandBuffer.error);
     }
-
-    NSLog(@"Threadgroups: %lu x %lu, Threads per group: %lu x %lu",
-          (unsigned long)threadgroupCount.width,
-          (unsigned long)threadgroupCount.height,
-          (unsigned long)threadgroupSize.width,
-          (unsigned long)threadgroupSize.height);
 
     // Read back pixels
     // Metal RGBA8Unorm stores as RGBA (R=byte0, G=byte1, B=byte2, A=byte3)
@@ -255,14 +238,7 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
       bgra[idx + 3] = rgba[idx + 3]; // A (from RGBA A)
     }
 
-    // Debug: Check first pixel
-    static bool logged = false;
-    if (!logged) {
-      uint8_t *pixels = renderer->pixelData.data();
-      NSLog(@"First pixel ARGB: %d %d %d %d", pixels[0], pixels[1], pixels[2],
-            pixels[3]);
-      logged = true;
-    }
+    // Pixel debug logging removed for performance
   }
 }
 

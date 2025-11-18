@@ -123,17 +123,37 @@ If you're using VS Code, you can use the built-in tasks:
 | Key | Action |
 |-----|--------|
 | **F** | Toggle fullscreen mode |
+| **+/-** | Increase/Decrease resolution (cycles through presets) |
 | **C** | Cycle through cinematic camera modes |
+| **Arrow Keys** or **IJKL** | Rotate camera view (works in all modes) |
 | **W** | Move camera forward (Manual mode only) |
 | **A** | Move camera left (Manual mode only) |
 | **S** | Move camera backward (Manual mode only) |
 | **D** | Move camera right (Manual mode only) |
 | **Space** | Move camera up (Manual mode only) |
 | **Shift** | Move camera down (Manual mode only) |
-| **R** | Reset camera position |
+| **R** | Reset camera position & rotation |
 | **Tab** | Toggle control hints overlay |
 | **ESC** | Exit fullscreen (if in fullscreen) or quit |
 | **Q** | Quit simulation |
+
+### Resolution Presets
+
+The application starts at **1080p FHD (1920×1080)** by default. Available presets (cycle with +/- keys):
+- **144p** (256×144) - Ultra low for testing
+- **240p** (426×240) - Low resolution
+- **360p** (640×360) - Standard definition
+- **480p** (854×480) - Enhanced definition
+- **720p HD** (1280×720) - High definition
+- **1080p FHD** (1920×1080) - Full HD (default)
+- **1440p QHD** (2560×1440) - Quad HD
+- **1620p** (2880×1620) - High resolution
+- **2160p 4K** (3840×2160) - Ultra HD 4K
+- **2880p 5K** (5120×2880) - 5K resolution
+- **4320p 8K** (7680×4320) - 8K resolution
+- **Native** - Your display's native resolution
+
+Change resolution at any time using **+** (increase) or **-** (decrease) keys. The rendering automatically adapts to the new resolution.
 
 ### Cinematic Camera Modes
 

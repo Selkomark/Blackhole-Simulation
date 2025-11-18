@@ -30,7 +30,8 @@ SOURCES := \
 	$(SRC_DIR)/camera/CinematicCamera.cpp \
 	$(SRC_DIR)/ui/HUD.cpp \
 	$(SRC_DIR)/physics/BlackHole.cpp \
-	$(SRC_DIR)/rendering/MetalRTRenderer.mm
+	$(SRC_DIR)/rendering/MetalRTRenderer.mm \
+	$(SRC_DIR)/utils/ResolutionManager.cpp
 
 # Object files
 OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SOURCES)))
@@ -50,7 +51,7 @@ all: $(TARGET)
 # Create build directory structure
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/camera $(BUILD_DIR)/ui \
-	          $(BUILD_DIR)/physics $(BUILD_DIR)/rendering
+	          $(BUILD_DIR)/physics $(BUILD_DIR)/rendering $(BUILD_DIR)/utils
 
 # Compile Metal shaders
 $(METAL_AIR): $(METAL_SOURCE) | $(BUILD_DIR)

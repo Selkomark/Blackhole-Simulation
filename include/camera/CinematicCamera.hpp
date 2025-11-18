@@ -44,12 +44,20 @@ private:
   double orbitRadius;
   double cinematicTime;
   
+  // Rotation state - we apply rotations incrementally each frame
+  // These don't accumulate, they're just flags for current rotation direction
+  double rotationSpeed;  // Rotation speed multiplier
+  
   // Update functions for each mode
   void updateManualMode(double deltaTime, const uint8_t *keyStates);
   void updateSmoothOrbit(double deltaTime);
   void updateWaveMotion(double deltaTime);
   void updateRisingSpiral(double deltaTime);
   void updateCloseFlyby(double deltaTime);
+  
+  // Update camera look direction based on rotation
+  // Rotations are applied incrementally each frame only when keys are pressed
+  void updateCameraLookDirection(double deltaTime);
 };
 
 // Helper function to get mode name from enum

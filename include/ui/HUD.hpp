@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include "../camera/CinematicCamera.hpp"
+#include "../camera/Camera.hpp"
 
 /**
  * Heads-Up Display for rendering on-screen information
@@ -13,6 +14,9 @@ public:
   
   // Render the hints overlay
   void renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight);
+  
+  // Render camera axis indicators (for debugging rotation)
+  void renderCameraAxes(const Camera *camera, int windowWidth, int windowHeight);
   
   // Toggle hints visibility
   void toggleHints() { hintsVisible = !hintsVisible; }

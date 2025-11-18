@@ -7,7 +7,8 @@ Application::Application()
     : window(nullptr), sdlRenderer(nullptr), font(nullptr),
       gpuRenderer(nullptr), gpuTexture(nullptr),
       blackHole(nullptr), camera(nullptr), cinematicCamera(nullptr), hud(nullptr),
-      windowWidth(1920), windowHeight(1080), isFullscreen(false),
+      resolutionManager(nullptr),
+      windowWidth(1920), windowHeight(1080), isFullscreen(false), isResizing(false),
       running(false), currentFPS(0) {}
 
 Application::~Application() {
@@ -21,6 +22,15 @@ bool Application::initialize() {
     return false;
   }
 
+  // Initialize resolution manager and set to 1080p (default)
+  resolutionManager = new ResolutionManager();
+  resolutionManager->setResolution(5); // 1080p FHD
+  
+  // Get selected resolution
+  const Resolution& res = resolutionManager->getCurrent();
+  windowWidth = res.width;
+  windowHeight = res.height;
+
   // Initialize SDL_ttf
   if (TTF_Init() < 0) {
     std::cerr << "SDL_ttf could not initialize! TTF_Error: " << TTF_GetError() << std::endl;
@@ -28,7 +38,7 @@ bool Application::initialize() {
   }
 
   // Create window (resizable)
-  window = SDL_CreateWindow("Black Hole Simulation | GPU | Smooth Orbit",
+  window = SDL_CreateWindow("Black Hole Simulation | Smooth Orbit",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                              windowWidth, windowHeight,
                              SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
@@ -38,10 +48,13 @@ bool Application::initialize() {
   }
   
   // Get actual window size (may differ due to high DPI)
-  SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+  int actualWidth, actualHeight;
+  SDL_GetWindowSize(window, &actualWidth, &actualHeight);
+  windowWidth = actualWidth;
+  windowHeight = actualHeight;
 
-  // Create SDL renderer
-  sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  // Create SDL renderer (without VSYNC to prevent pausing when idle)
+  sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!sdlRenderer) {
     std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
@@ -53,7 +66,7 @@ bool Application::initialize() {
     std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << std::endl;
   }
 
-  // Initialize GPU renderer (Metal)
+  // Initialize GPU renderer (Metal) with actual window size
   gpuRenderer = metal_rt_renderer_create(windowWidth, windowHeight);
   if (!gpuRenderer) {
     std::cerr << "ERROR: GPU renderer failed to initialize!\n";
@@ -64,23 +77,13 @@ bool Application::initialize() {
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
                                   SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
   
-  std::cout << "\n=== BLACK HOLE SIMULATION | GPU ACCELERATED ===\n";
-  std::cout << "Resolution: " << windowWidth << " × " << windowHeight << "\n";
-  std::cout << "F          - Toggle fullscreen\n";
-  std::cout << "C          - Cycle cinematic modes\n";
-  std::cout << "WASD       - Move camera (manual mode)\n";
-  std::cout << "Space      - Move camera up\n";
-  std::cout << "Shift      - Move camera down\n";
-  std::cout << "R          - Reset camera position\n";
-  std::cout << "Tab        - Toggle hints overlay\n";
-  std::cout << "ESC/Q      - Quit\n";
-  std::cout << "===========================================\n\n";
-  std::cout << "Metal GPU renderer initialized successfully\n";
+  // Startup messages removed - use HUD instead
 
   // Initialize simulation components
   blackHole = new BlackHole(1.0);
-  Vector3 initialPos(0, 3, -15);
-  camera = new Camera(initialPos, Vector3(0, 0, 0), 60.0);
+  // Camera starts further back, looking at black hole center (0, 0, 0)
+  Vector3 initialPos(0, 3, -20); // Increased distance from -15 to -20 for better initial view
+  camera = new Camera(initialPos, Vector3(0, 0, 0), 60.0); // Points at black hole center
   cinematicCamera = new CinematicCamera(*camera, initialPos);
   hud = new HUD(sdlRenderer, font);
 
@@ -98,10 +101,29 @@ void Application::run() {
   while (running) {
     auto currentTime = std::chrono::high_resolution_clock::now();
     double deltaTime = std::chrono::duration<double>(currentTime - lastTime).count();
+    
+    // Clamp deltaTime to reasonable bounds (1ms to 100ms)
+    if (deltaTime < 0.001) {
+      deltaTime = 0.001; // Minimum 1ms
+    } else if (deltaTime > 0.1) {
+      deltaTime = 0.1; // Maximum 100ms (prevent large jumps)
+    }
+    
     lastTime = currentTime;
     double elapsedTime = std::chrono::duration<double>(currentTime - startTime).count();
+    
+    // Ensure elapsedTime always advances (debug check)
+    static double lastElapsedTime = -1.0;
+    if (elapsedTime <= lastElapsedTime) {
+        // Time didn't advance - this shouldn't happen
+        elapsedTime = lastElapsedTime + deltaTime;
+    }
+    lastElapsedTime = elapsedTime;
 
+    // Always process events (non-blocking)
     handleEvents();
+    
+    // Always update and render, regardless of input
     update(deltaTime);
     render(elapsedTime);
 
@@ -114,6 +136,9 @@ void Application::run() {
       fpsUpdateTime = 0.0;
       updateWindowTitle();
     }
+    
+    // No delay - keep rendering at full speed
+    // The loop must continue running continuously
   }
 }
 
@@ -139,21 +164,29 @@ void Application::handleEvents() {
           break;
         case SDLK_r:
           cinematicCamera->reset();
-          std::cout << "Camera reset" << std::endl;
+          // Camera reset logging removed
           break;
         case SDLK_TAB:
           hud->toggleHints();
-          std::cout << "Hints: " << (hud->areHintsVisible() ? "ON" : "OFF") << std::endl;
+          // Hints toggle logging removed
           break;
         case SDLK_c:
           cinematicCamera->cycleMode();
-          std::cout << "Cinematic Mode: " << cinematicCamera->getModeName() << std::endl;
+          // Mode change logging removed
           updateWindowTitle();
+          break;
+        case SDLK_PLUS:
+        case SDLK_EQUALS:
+          changeResolution(true);
+          break;
+        case SDLK_MINUS:
+        case SDLK_UNDERSCORE:
+          changeResolution(false);
           break;
       }
     } else if (e.type == SDL_WINDOWEVENT) {
-      if (e.window.event == SDL_WINDOWEVENT_RESIZED || 
-          e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+      if ((e.window.event == SDL_WINDOWEVENT_RESIZED || 
+           e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) && !isResizing) {
         handleWindowResize(e.window.data1, e.window.data2);
       }
     }
@@ -161,33 +194,90 @@ void Application::handleEvents() {
 }
 
 void Application::update(double deltaTime) {
+  // Always update, even if deltaTime is small
+  // This ensures camera and animation state stays current
   const Uint8 *keyStates = SDL_GetKeyboardState(nullptr);
+  
+  // Update camera - this must happen every frame
+  // Even in manual mode with no input, camera look direction needs updating
   cinematicCamera->update(deltaTime, keyStates);
 }
 
 void Application::render(double elapsedTime) {
-  SDL_RenderClear(sdlRenderer);
-
+  // Always render, regardless of input state or mode
+  // This ensures animation continues even in manual mode when idle
+  
   // Prepare camera data for GPU
   CameraData gpuCam;
   prepareCameraData(gpuCam);
 
-  // Render with Metal GPU
-  metal_rt_renderer_render(gpuRenderer, &gpuCam, elapsedTime);
+  // Render with Metal GPU - elapsedTime always advances
+  // The black hole animation is driven by elapsedTime, not camera movement
+  // Force render every frame, even if camera doesn't move
+  float renderTime = static_cast<float>(elapsedTime);
+  
+  // Debug logging removed for performance
+  
+  metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
-  SDL_UpdateTexture(gpuTexture, nullptr, pixels, windowWidth * 4);
-  SDL_RenderCopy(sdlRenderer, gpuTexture, nullptr, nullptr);
+  
+  if (pixels && gpuTexture) {
+    // Always update texture - force update even if pixels appear unchanged
+    // This ensures animation continues even when camera is stationary
+    // Explicitly update the entire texture region
+    SDL_Rect updateRect = {0, 0, windowWidth, windowHeight};
+    int result = SDL_UpdateTexture(gpuTexture, &updateRect, pixels, windowWidth * 4);
+    if (result != 0) {
+      static int updateErrorCount = 0;
+      if (updateErrorCount++ < 3) {
+        std::cerr << "SDL_UpdateTexture error: " << SDL_GetError() << std::endl;
+      }
+    }
+    
+    // Clear renderer before copying to ensure fresh frame
+    SDL_RenderClear(sdlRenderer);
+    SDL_RenderCopy(sdlRenderer, gpuTexture, nullptr, nullptr);
+    
+    // Force renderer to flush commands
+    SDL_RenderFlush(sdlRenderer);
+  } else {
+    // If rendering fails, log error but continue loop
+    static int errorCount = 0;
+    if (errorCount++ < 5) {
+      std::cerr << "Warning: Render failed - pixels: " << (pixels ? "OK" : "NULL") 
+                << ", texture: " << (gpuTexture ? "OK" : "NULL") << std::endl;
+    }
+  }
 
   // Render HUD
   hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight);
 
+  // Always present - this must happen every frame
+  // Force presentation even if SDL thinks nothing changed
   SDL_RenderPresent(sdlRenderer);
+  
+  // Force window update on macOS - prevent throttling
+  #ifdef __APPLE__
+  // Process events to keep window active and prevent macOS throttling
+  SDL_PumpEvents();
+  #endif
 }
 
 void Application::prepareCameraData(CameraData &data) {
+  // Always ensure camera data is valid, even when switching modes
   data.position[0] = camera->position.x;
   data.position[1] = camera->position.y;
   data.position[2] = camera->position.z;
+  
+  // Ensure forward vector is valid (non-zero)
+  float forwardLen = std::sqrt(camera->forward.x * camera->forward.x + 
+                                camera->forward.y * camera->forward.y + 
+                                camera->forward.z * camera->forward.z);
+  if (forwardLen < 0.001f) {
+    // Fallback: look at black hole center
+    camera->lookAt(Vector3(0, 0, 0));
+  }
+  
   data.forward[0] = camera->forward.x;
   data.forward[1] = camera->forward.y;
   data.forward[2] = camera->forward.z;
@@ -208,7 +298,7 @@ void Application::toggleFullscreen() {
   SDL_GetWindowSize(window, &windowWidth, &windowHeight);
   handleWindowResize(windowWidth, windowHeight);
   
-  std::cout << "Fullscreen: " << (isFullscreen ? "ON" : "OFF") << std::endl;
+  // Fullscreen toggle logging removed
 }
 
 void Application::handleWindowResize(int width, int height) {
@@ -219,30 +309,100 @@ void Application::handleWindowResize(int width, int height) {
   windowWidth = width;
   windowHeight = height;
   
-  std::cout << "Window resized to: " << width << " × " << height << std::endl;
+  // Window resize logging removed
   recreateRenderTargets();
 }
 
 void Application::recreateRenderTargets() {
-  // Resize Metal renderer
+  // Ensure we have the actual window size (accounting for DPI scaling)
+  int actualWidth, actualHeight;
+  SDL_GetWindowSize(window, &actualWidth, &actualHeight);
+  windowWidth = actualWidth;
+  windowHeight = actualHeight;
+  
+  // Resize Metal renderer first (this updates internal resolution)
   metal_rt_renderer_resize(gpuRenderer, windowWidth, windowHeight);
   
-  // Recreate SDL texture
+  // Recreate SDL texture with new dimensions
   if (gpuTexture) {
     SDL_DestroyTexture(gpuTexture);
+    gpuTexture = nullptr;
   }
+  
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
                                   SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
+  
+  if (!gpuTexture) {
+    std::cerr << "Failed to recreate texture at " << windowWidth << "×" << windowHeight << std::endl;
+  } else {
+    // Render target recreation logging removed
+  }
   
   updateWindowTitle();
 }
 
 void Application::updateWindowTitle() {
-  std::string title = "Black Hole Simulation | GPU | " +
+  std::string title = "Black Hole Simulation - " +
                       std::string(cinematicCamera->getModeName()) +
-                      " | " + std::to_string(windowWidth) + "×" + std::to_string(windowHeight) +
-                      " | FPS: " + std::to_string(currentFPS);
+                      " - " + std::to_string(windowWidth) + "×" + std::to_string(windowHeight) +
+                      " - FPS: " + std::to_string(currentFPS);
   SDL_SetWindowTitle(window, title.c_str());
+}
+
+
+void Application::changeResolution(bool increase) {
+  if (increase) {
+    resolutionManager->next();
+  } else {
+    resolutionManager->previous();
+  }
+  
+  const Resolution& res = resolutionManager->getCurrent();
+  
+  int newWidth, newHeight;
+  if (res.width == 0 && res.height == 0) {
+    // Native resolution
+    SDL_DisplayMode displayMode;
+    if (SDL_GetDesktopDisplayMode(0, &displayMode) == 0) {
+      newWidth = displayMode.w;
+      newHeight = displayMode.h;
+    } else {
+      newWidth = 1920;
+      newHeight = 1080;
+    }
+  } else {
+    newWidth = res.width;
+    newHeight = res.height;
+  }
+  
+  // Skip if same resolution
+  if (newWidth == windowWidth && newHeight == windowHeight) {
+    return;
+  }
+  
+  // Set flag to prevent recursive resize events
+  isResizing = true;
+  
+  // Resize window first
+  SDL_SetWindowSize(window, newWidth, newHeight);
+  
+  // Process events to ensure window resize completes
+  SDL_PumpEvents();
+  SDL_FlushEvents(SDL_WINDOWEVENT, SDL_WINDOWEVENT);
+  
+  // Get actual window size (may differ due to high DPI scaling)
+  int actualWidth, actualHeight;
+  SDL_GetWindowSize(window, &actualWidth, &actualHeight);
+  
+  // Update to actual size
+  windowWidth = actualWidth;
+  windowHeight = actualHeight;
+  
+  // Force immediate resize of render targets
+  recreateRenderTargets();
+  
+  // Clear flag
+  isResizing = false;
 }
 
 void Application::cleanup() {
@@ -257,6 +417,7 @@ void Application::cleanup() {
   if (window)
     SDL_DestroyWindow(window);
   
+  delete resolutionManager;
   delete hud;
   delete cinematicCamera;
   delete camera;

@@ -73,16 +73,19 @@ void rk4_step(thread float3& pos, thread float3& vel, float dt) {
 }
 
 // Accretion disk density
-float disk_density(float3 pos) {
+float disk_density(float3 pos, float time) {
     float r = length(pos);
     
     // Disk bounds
     if (r < RS * 2.5 || r > RS * 12.0) return 0.0;
     if (abs(pos.y) > 0.2) return 0.0;
     
-    // Procedural pattern
+    // Procedural pattern with time-based rotation
+    // Rotate the disk pattern over time to create animation
     float angle = atan2(pos.z, pos.x);
-    float spiral = sin(angle * 3.0 + r * 0.5);
+    float rotationSpeed = 1.0; // Rotation speed (increased for more visible animation)
+    float rotatedAngle = angle + time * rotationSpeed;
+    float spiral = sin(rotatedAngle * 3.0 + r * 0.5);
     float rings = sin(r * 2.0);
     float noise = (spiral + rings) * 0.5 + 0.5;
     
@@ -117,10 +120,21 @@ float3 disk_color(float density, float r) {
     return base_color * density * 3.5;
 }
 
-// Background starfield
-float3 sample_background(float3 dir) {
-    float u = 0.5 + atan2(dir.z, dir.x) / (2.0 * PI);
-    float v = 0.5 - asin(dir.y) / PI;
+// Background starfield with time-based rotation
+float3 sample_background(float3 dir, float time) {
+    // Rotate background over time for continuous animation
+    float rotationAngle = time * 0.1; // Slow rotation speed
+    float cosRot = cos(rotationAngle);
+    float sinRot = sin(rotationAngle);
+    
+    // Rotate direction around Y axis
+    float3 rotatedDir;
+    rotatedDir.x = dir.x * cosRot - dir.z * sinRot;
+    rotatedDir.y = dir.y;
+    rotatedDir.z = dir.x * sinRot + dir.z * cosRot;
+    
+    float u = 0.5 + atan2(rotatedDir.z, rotatedDir.x) / (2.0 * PI);
+    float v = 0.5 - asin(rotatedDir.y) / PI;
     
     float3 color = float3(0.0);  // Pure black background
     
@@ -134,7 +148,7 @@ float3 sample_background(float3 dir) {
 }
 
 // Full volumetric ray tracing
-float3 trace_ray(float3 origin, float3 direction) {
+float3 trace_ray(float3 origin, float3 direction, float time) {
     float3 pos = origin;
     float3 vel = direction;
     
@@ -151,7 +165,7 @@ float3 trace_ray(float3 origin, float3 direction) {
         }
         
         // Volumetric Accretion Disk Integration
-        float density = disk_density(pos);
+        float density = disk_density(pos, time);
         if (density > 0.001) {
             float r = sqrt(r2);
             float3 emission = disk_color(density, r);
@@ -177,8 +191,8 @@ float3 trace_ray(float3 origin, float3 direction) {
         totalDist += dt;
     }
     
-    // Add background if ray escapes
-    accumulatedColor += sample_background(vel) * transmittance;
+        // Add background if ray escapes - pass time for rotation
+        accumulatedColor += sample_background(vel, time) * transmittance;
     
     return accumulatedColor;
 }
@@ -220,9 +234,9 @@ kernel void ray_generation(
     float3 up = float3(uniforms.camera.up);
     float3 dir = normalize(forward + right * px + up * py);
     
-    // Trace ray
+    // Trace ray - pass time for animation
     float3 origin = float3(uniforms.camera.position);
-    float3 color = trace_ray(origin, dir);
+    float3 color = trace_ray(origin, dir, uniforms.time);
     
     // Check if color is valid (not NaN or Inf)
     if (isnan(color.x) || isnan(color.y) || isnan(color.z) ||

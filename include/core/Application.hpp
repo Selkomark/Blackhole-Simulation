@@ -7,6 +7,7 @@
 #include "../ui/HUD.hpp"
 #include "../rendering/MetalRTRenderer.h"
 #include "../physics/BlackHole.hpp"
+#include "../utils/ResolutionManager.hpp"
 
 /**
  * Main application class managing the simulation lifecycle
@@ -37,11 +38,13 @@ private:
   Camera *camera;
   CinematicCamera *cinematicCamera;
   HUD *hud;
+  ResolutionManager *resolutionManager;
   
   // Window properties (dynamic)
   int windowWidth;
   int windowHeight;
   bool isFullscreen;
+  bool isResizing; // Flag to prevent recursive resize events
   
   // State
   bool running;
@@ -56,6 +59,7 @@ private:
   void toggleFullscreen();
   void handleWindowResize(int width, int height);
   void recreateRenderTargets();
+  void changeResolution(bool increase);
   
   // Helper to convert camera data for GPU
   void prepareCameraData(CameraData &data);
