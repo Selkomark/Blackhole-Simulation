@@ -1,0 +1,5 @@
+build/
+blackhole_sim
+vcpkg/
+vcpkg_installed/
+.DS_Store
