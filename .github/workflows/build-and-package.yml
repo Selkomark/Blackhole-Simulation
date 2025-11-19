@@ -1,15 +1,20 @@
 name: Build and Package
 
-# This workflow builds the BlackHoleSim application for both Intel (x86_64) and Apple Silicon (arm64)
+# This workflow builds the Blackhole Simulation application for both Intel (x86_64) and Apple Silicon (arm64)
 # architectures, creates DMG files, and uploads them as artifacts.
 #
 # Triggers:
-#   - Push to main branch
-#   - Manual workflow dispatch
+#   - Push to main branch (uses default version 1.0)
+#   - Tags matching 'prod-v*' pattern (e.g., prod-v1.0.0) - extracts version from tag
+#   - Manual workflow dispatch (can specify version via input)
+#
+# Version Handling:
+#   - Tag format: prod-v<VERSION> (e.g., prod-v1.0.0 extracts version "1.0.0")
+#   - Version is used in DMG filenames, app bundle Info.plist, and artifact names
+#   - Default version for branch builds: 1.0
 #
 # Outputs:
-#   - DMG files for each architecture (BlackHoleSim-1.0-arm64.dmg, BlackHoleSim-1.0-x86_64.dmg)
-#   - App bundles for each architecture
+#   - DMG files for each architecture (Blackhole Simulation-<VERSION>-<arch>.dmg)
 #
 # Note: Code signing is enabled if MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD secrets are configured.
 # To set up signing:
@@ -22,7 +27,14 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'prod-v*'  # Trigger on production tags like prod-v1.0.0
   workflow_dispatch: # Allow manual triggering
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -42,12 +54,36 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for tags
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]] && [[ "${{ github.ref_name }}" =~ ^prod-v(.+)$ ]]; then
+            # Extract version from tag (everything after prod-v)
+            VERSION="${BASH_REMATCH[1]}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Extracted version from tag: $VERSION"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            # Use version from workflow_dispatch input
+            VERSION="${{ inputs.version }}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Using version from input: $VERSION"
+          else
+            # Default version for branch builds
+            VERSION="1.0"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "⚠️  Using default version: $VERSION"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
       
       - name: Set up environment
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "TRIPLET=${{ matrix.triplet }}" >> $GITHUB_ENV
           echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
+          echo "APP_VERSION=${{ steps.version.outputs.version }}" >> $GITHUB_ENV
       
       - name: Cache vcpkg
         id: cache-vcpkg
@@ -107,6 +143,27 @@ jobs:
       - name: Install dependencies
         run: |
           ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}
+          # Verify installation succeeded
+          if [ $? -ne 0 ]; then
+            echo "❌ Error: vcpkg install failed!"
+            exit 1
+          fi
+          echo "✅ vcpkg install completed successfully"
+      
+      - name: Verify vcpkg installation
+        run: |
+          echo "Verifying vcpkg installation for ${{ matrix.triplet }}..."
+          if [ ! -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            echo "❌ Error: vcpkg installed directory not found!"
+            exit 1
+          fi
+          if [ ! -f "./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h" ]; then
+            echo "❌ Error: SDL2 headers not found!"
+            echo "Checking include directory contents:"
+            ls -la "./vcpkg/installed/${{ matrix.triplet }}/include/" || true
+            exit 1
+          fi
+          echo "✅ SDL2 headers found at: ./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h"
       
       - name: Update Makefile for architecture
         run: |
@@ -115,7 +172,10 @@ jobs:
           # Update RPATH
           sed -i '' "s|-Wl,-rpath,\\./vcpkg/installed/[^ ]*|-Wl,-rpath,./vcpkg/installed/${{ matrix.triplet }}/lib|" Makefile
           echo "Updated Makefile for ${{ matrix.triplet }}"
+          echo "VCPKG_INSTALLED path:"
           grep "VCPKG_INSTALLED" Makefile
+          echo "Include path:"
+          grep "INCLUDES" Makefile
       
       - name: Cache build artifacts
         id: cache-build
@@ -142,6 +202,8 @@ jobs:
           make
       
       - name: Create app bundle
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           make app
       
@@ -207,29 +269,24 @@ jobs:
           ./scripts/sign_app.sh
       
       - name: Create DMG
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           ./scripts/create_dmg.sh
       
       - name: Rename DMG with architecture
         run: |
           cd export
-          if [ -f "Blackhole Simulation-1.0.dmg" ]; then
-            mv "Blackhole Simulation-1.0.dmg" "Blackhole Simulation-1.0-${{ matrix.arch }}.dmg"
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ -f "Blackhole Simulation-${VERSION}.dmg" ]; then
+            mv "Blackhole Simulation-${VERSION}.dmg" "Blackhole Simulation-${VERSION}-${{ matrix.arch }}.dmg"
           fi
       
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BlackholeSimulation-${{ matrix.arch }}-dmg
-          path: export/Blackhole Simulation-1.0-${{ matrix.arch }}.dmg
-          retention-days: 30
-          if-no-files-found: error
-      
-      - name: Upload app bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BlackholeSimulation-${{ matrix.arch }}-app
-          path: export/Blackhole Simulation.app
+          name: BlackholeSimulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}-dmg
+          path: export/Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
           retention-days: 30
           if-no-files-found: error
       
@@ -253,5 +310,6 @@ jobs:
           else
             echo "- ⚠️ Code signed: No (secrets not configured)" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "- DMG: Blackhole Simulation-1.0-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- DMG: Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
 

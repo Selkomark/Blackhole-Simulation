@@ -56,9 +56,9 @@ cat > "${CONTENTS_DIR}/Info.plist" << EOF
     <key>CFBundleDisplayName</key>
     <string>Blackhole Simulation</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>${APP_VERSION:-1.0}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>${APP_VERSION:-1.0}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
