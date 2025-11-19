@@ -49,11 +49,22 @@ jobs:
           echo "TRIPLET=${{ matrix.triplet }}" >> $GITHUB_ENV
           echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
       
+      - name: Cache vcpkg
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg
+            ~/.cache/vcpkg
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-${{ matrix.triplet }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-
+            ${{ runner.os }}-vcpkg-
+      
       - name: Clone vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
-          if [ ! -d "vcpkg" ]; then
-            git clone https://github.com/Microsoft/vcpkg.git vcpkg
-          fi
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
       
       - name: Make scripts executable
         run: |
@@ -64,9 +75,29 @@ jobs:
           fi
       
       - name: Bootstrap vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           cd vcpkg
           ./bootstrap-vcpkg.sh
+      
+      - name: Cache vcpkg installed packages
+        id: cache-vcpkg-installed
+        uses: actions/cache@v4
+        with:
+          path: vcpkg/installed/${{ matrix.triplet }}
+          key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-${{ matrix.triplet }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-
+            ${{ runner.os }}-vcpkg-installed-
+      
+      - name: Cache vcpkg downloads
+        id: cache-vcpkg-downloads
+        uses: actions/cache@v4
+        with:
+          path: vcpkg/downloads
+          key: ${{ runner.os }}-vcpkg-downloads-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-
       
       - name: Install dependencies
         run: |
@@ -81,11 +112,28 @@ jobs:
           echo "Updated Makefile for ${{ matrix.triplet }}"
           grep "VCPKG_INSTALLED" Makefile
       
+      - name: Cache build artifacts
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+            export/blackhole_sim
+          key: ${{ runner.os }}-build-${{ matrix.arch }}-${{ hashFiles('Makefile', 'src/**/*.cpp', 'src/**/*.mm', 'include/**/*.hpp', 'shaders/**/*.metal') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ matrix.arch }}-
+      
       - name: Build application
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          make clean
+          # Only clean if cache miss to speed up builds
+          if [ "${{ steps.cache-build.outputs.cache-hit }}" != "true" ]; then
+            echo "Cache miss - cleaning build directory"
+            make clean
+          else
+            echo "Cache hit - skipping clean for faster build"
+          fi
           make
       
       - name: Create app bundle
