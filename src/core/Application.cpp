@@ -1,16 +1,18 @@
 #include "../../include/core/Application.hpp"
+#include "../../include/utils/SaveDialog.h"
 #include <iostream>
 #include <chrono>
 #include <string>
+#include <ctime>
 
 Application::Application()
     : window(nullptr), sdlRenderer(nullptr), font(nullptr),
       gpuRenderer(nullptr), gpuTexture(nullptr),
       blackHole(nullptr), camera(nullptr), cinematicCamera(nullptr), hud(nullptr),
-      resolutionManager(nullptr),
+      resolutionManager(nullptr), videoRecorder(nullptr),
       windowWidth(1920), windowHeight(1080), renderWidth(1920), renderHeight(1080),
       isFullscreen(false), isResizing(false),
-      running(false), currentFPS(0) {}
+      running(false), currentFPS(0), isRecording(false) {}
 
 Application::~Application() {
   cleanup();
@@ -124,6 +126,7 @@ bool Application::initialize() {
   // Force update camera look direction to establish correct initial orientation
   camera->lookAt(Vector3(0, 0, 0));
   hud = new HUD(sdlRenderer, font);
+  videoRecorder = new VideoRecorder();
 
   running = true;
   return true;
@@ -196,8 +199,37 @@ void Application::handleEvents() {
     if (e.type == SDL_QUIT) {
       running = false;
     } else if (e.type == SDL_KEYDOWN) {
+      // Check for Command+R (start recording)
+      if (e.key.keysym.sym == SDLK_r && (e.key.keysym.mod & KMOD_GUI)) {
+        if (!isRecording) {
+          std::cout << "Command+R pressed - starting recording..." << std::endl;
+          startRecording();
+        } else {
+          std::cout << "Already recording!" << std::endl;
+        }
+        break;
+      }
+      
+      // Check for Enter or Esc to stop recording
+      if (isRecording && (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER || e.key.keysym.sym == SDLK_ESCAPE)) {
+        stopRecording();
+        // If Esc was pressed and not recording anymore, handle normally
+        if (e.key.keysym.sym == SDLK_ESCAPE && !isRecording) {
+          if (isFullscreen) {
+            toggleFullscreen();
+          } else {
+            running = false;
+          }
+        }
+        break;
+      }
+      
       switch (e.key.keysym.sym) {
         case SDLK_ESCAPE:
+          if (isRecording) {
+            stopRecording();
+            break;
+          }
           if (isFullscreen) {
             toggleFullscreen(); // Exit fullscreen on ESC
           } else {
@@ -211,8 +243,10 @@ void Application::handleEvents() {
           toggleFullscreen();
           break;
         case SDLK_r:
-          cinematicCamera->reset();
-          // Camera reset logging removed
+          // Only reset camera if Command is not pressed (Command+R is handled above)
+          if (!(e.key.keysym.mod & KMOD_GUI)) {
+            cinematicCamera->reset();
+          }
           break;
         case SDLK_TAB:
           hud->toggleHints();
@@ -268,6 +302,11 @@ void Application::render(double elapsedTime) {
   
   metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
+  
+  // Capture frame for video recording if recording (before texture update)
+  if (isRecording && videoRecorder && pixels) {
+    videoRecorder->addFrame(pixels, renderWidth, renderHeight);
+  }
   
   if (pixels && gpuTexture) {
     // Always update texture - force update even if pixels appear unchanged
@@ -337,8 +376,9 @@ void Application::render(double elapsedTime) {
   SDL_RenderSetViewport(sdlRenderer, nullptr); // Use full renderer output
   SDL_RenderSetScale(sdlRenderer, 1.0f, 1.0f); // Ensure 1:1 scale for HUD
   
-  // Render HUD
-  hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager);
+  // Render HUD (hide hints if recording)
+  bool showHints = hud->areHintsVisible() && !isRecording;
+  hud->renderHints(showHints, cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager);
 
   // Always present - this must happen every frame
   // Force presentation even if SDL thinks nothing changed
@@ -473,6 +513,9 @@ void Application::updateWindowTitle() {
   std::string title = "Black Hole Simulation - " +
                       std::string(cinematicCamera->getModeName()) +
                       " - FPS: " + std::to_string(currentFPS);
+  if (isRecording) {
+    title = "🔴 " + title;
+  }
   SDL_SetWindowTitle(window, title.c_str());
 }
 
@@ -516,7 +559,62 @@ void Application::changeResolution(bool increase) {
   recreateRenderTargets();
 }
 
+void Application::startRecording() {
+  if (isRecording || !videoRecorder) {
+    return;
+  }
+  
+  // Generate filename with timestamp
+  std::time_t now = std::time(nullptr);
+  std::tm* tm = std::localtime(&now);
+  char filename[256];
+  std::snprintf(filename, sizeof(filename), "blackhole_recording_%04d%02d%02d_%02d%02d%02d.mp4",
+                tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                tm->tm_hour, tm->tm_min, tm->tm_sec);
+  
+  if (videoRecorder->startRecording(filename, renderWidth, renderHeight, currentFPS > 0 ? currentFPS : 60)) {
+    isRecording = true;
+    updateWindowTitle();
+    std::cout << "Recording started at " << renderWidth << "×" << renderHeight << std::endl;
+  } else {
+    std::cerr << "Failed to start recording!" << std::endl;
+  }
+}
+
+void Application::stopRecording() {
+  if (!isRecording || !videoRecorder) {
+    return;
+  }
+  
+  // Stop recording first
+  videoRecorder->stopRecording();
+  std::string tempFilename = videoRecorder->getFilename();
+  isRecording = false;
+  updateWindowTitle();
+  
+  // Show save dialog
+  std::string savePath = showSaveDialog(tempFilename);
+  
+  if (!savePath.empty()) {
+    // Move file to user-selected location
+    if (videoRecorder->moveFile(savePath)) {
+      std::cout << "Recording saved to: " << savePath << std::endl;
+    } else {
+      std::cerr << "Failed to move recording to: " << savePath << std::endl;
+      std::cerr << "Original file is still at: " << tempFilename << std::endl;
+    }
+  } else {
+    // User cancelled - keep file in original location
+    std::cout << "Recording saved to: " << tempFilename << std::endl;
+  }
+}
+
 void Application::cleanup() {
+  // Stop recording if active
+  if (isRecording) {
+    stopRecording();
+  }
+  
   if (gpuRenderer)
     metal_rt_renderer_destroy(gpuRenderer);
   if (gpuTexture)
@@ -528,6 +626,7 @@ void Application::cleanup() {
   if (window)
     SDL_DestroyWindow(window);
   
+  delete videoRecorder;
   delete resolutionManager;
   delete hud;
   delete cinematicCamera;

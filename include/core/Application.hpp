@@ -8,6 +8,7 @@
 #include "../rendering/MetalRTRenderer.h"
 #include "../physics/BlackHole.hpp"
 #include "../utils/ResolutionManager.hpp"
+#include "../utils/VideoRecorder.hpp"
 
 /**
  * Main application class managing the simulation lifecycle
@@ -39,6 +40,7 @@ private:
   CinematicCamera *cinematicCamera;
   HUD *hud;
   ResolutionManager *resolutionManager;
+  VideoRecorder *videoRecorder;
   
   // Window properties (dynamic)
   int windowWidth;
@@ -51,6 +53,7 @@ private:
   // State
   bool running;
   int currentFPS;
+  bool isRecording;
   
   // Private methods
   void handleEvents();
@@ -62,6 +65,10 @@ private:
   void handleWindowResize(int width, int height);
   void recreateRenderTargets();
   void changeResolution(bool increase);
+  
+  // Video recording
+  void startRecording();
+  void stopRecording();
   
   // Helper to convert camera data for GPU
   void prepareCameraData(CameraData &data);

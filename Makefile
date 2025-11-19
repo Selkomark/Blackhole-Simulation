@@ -7,7 +7,8 @@ OBJC_FLAGS := -fobjc-arc
 VCPKG_INSTALLED := ./vcpkg/installed/arm64-osx
 INCLUDES := -I$(VCPKG_INSTALLED)/include
 LDFLAGS := -L$(VCPKG_INSTALLED)/lib
-LIBS := -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon
+LIBS := -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon \
+        -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lavdevice
 RPATH := -Wl,-rpath,$(VCPKG_INSTALLED)/lib
 
 # macOS frameworks
@@ -15,6 +16,7 @@ FRAMEWORKS := -framework Cocoa -framework IOKit -framework CoreVideo \
               -framework CoreAudio -framework AudioToolbox -framework ForceFeedback \
               -framework Carbon -framework Metal -framework MetalKit \
               -framework Foundation -framework GameController -framework CoreHaptics \
+              -framework VideoToolbox -framework CoreMedia -framework AVFoundation \
               -liconv
 
 # Directories
@@ -31,7 +33,9 @@ SOURCES := \
 	$(SRC_DIR)/ui/HUD.cpp \
 	$(SRC_DIR)/physics/BlackHole.cpp \
 	$(SRC_DIR)/rendering/MetalRTRenderer.mm \
-	$(SRC_DIR)/utils/ResolutionManager.cpp
+	$(SRC_DIR)/utils/ResolutionManager.cpp \
+	$(SRC_DIR)/utils/VideoRecorder.cpp \
+	$(SRC_DIR)/utils/SaveDialog.mm
 
 # Object files
 OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SOURCES)))

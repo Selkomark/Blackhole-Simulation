@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "sdl2",
+    "sdl2-ttf",
+    "ffmpeg"
+  ],
+  "builtin-baseline": "2024.01.12"
+}
+
