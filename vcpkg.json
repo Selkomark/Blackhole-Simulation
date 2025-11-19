@@ -4,6 +4,6 @@
     "sdl2-ttf",
     "ffmpeg"
   ],
-  "builtin-baseline": "2024.01.12"
+  "builtin-baseline": "45e834acc02adc82828712895c2ccd82cd412011"
 }
 
