@@ -1,0 +1,200 @@
+name: Build and Package
+
+# This workflow builds the BlackHoleSim application for both Intel (x86_64) and Apple Silicon (arm64)
+# architectures, creates DMG files, and uploads them as artifacts.
+#
+# Triggers:
+#   - Push to main branch
+#   - Manual workflow dispatch
+#
+# Outputs:
+#   - DMG files for each architecture (BlackHoleSim-1.0-arm64.dmg, BlackHoleSim-1.0-x86_64.dmg)
+#   - App bundles for each architecture
+#
+# Note: Code signing is enabled if MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD secrets are configured.
+# To set up signing:
+#   1. Export your Developer ID certificate as a .p12 file
+#   2. Base64 encode it: base64 -i YourCertificate.p12 | pbcopy
+#   3. Add it as a GitHub secret: MACOS_CERTIFICATE
+#   4. Add the certificate password as another secret: MACOS_CERTIFICATE_PASSWORD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+        include:
+          - arch: arm64
+            runner: macos-14
+            triplet: arm64-osx
+          - arch: x86_64
+            runner: macos-13
+            triplet: x64-osx
+    
+    runs-on: ${{ matrix.runner }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up environment
+        run: |
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "TRIPLET=${{ matrix.triplet }}" >> $GITHUB_ENV
+          echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
+      
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          chmod +x sign_package.sh
+          chmod +x vcpkg/bootstrap-vcpkg.sh
+      
+      - name: Bootstrap vcpkg
+        run: |
+          cd vcpkg
+          ./bootstrap-vcpkg.sh
+      
+      - name: Install dependencies
+        run: |
+          ./vcpkg/vcpkg install \
+            sdl2 \
+            sdl2-ttf \
+            freetype \
+            libpng \
+            bzip2 \
+            zlib \
+            brotli \
+            ffmpeg \
+            --triplet ${{ matrix.triplet }}
+      
+      - name: Update Makefile for architecture
+        run: |
+          # Update VCPKG_INSTALLED path in Makefile (macOS sed syntax)
+          sed -i '' "s|VCPKG_INSTALLED := .*|VCPKG_INSTALLED := ./vcpkg/installed/${{ matrix.triplet }}|" Makefile
+          # Update RPATH
+          sed -i '' "s|-Wl,-rpath,\\./vcpkg/installed/[^ ]*|-Wl,-rpath,./vcpkg/installed/${{ matrix.triplet }}/lib|" Makefile
+          echo "Updated Makefile for ${{ matrix.triplet }}"
+          grep "VCPKG_INSTALLED" Makefile
+      
+      - name: Build application
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          make clean
+          make
+      
+      - name: Create app bundle
+        run: |
+          make app
+      
+      - name: Import signing certificate
+        if: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Decode certificate
+          echo "$MACOS_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
+          
+          # Create temporary keychain
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Allow codesign to access the certificate
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
+          
+          # Find and export the signing identity
+          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | \
+            grep "Developer ID Application" | \
+            head -1 | \
+            sed -n 's/.*"\(.*\)".*/\1/p')
+          
+          if [ -z "$IDENTITY" ]; then
+            echo "❌ Error: Could not find Developer ID Application certificate"
+            security list-keychain -d user -s login.keychain
+            exit 1
+          fi
+          
+          echo "✅ Found signing identity: $IDENTITY"
+          echo "MACOS_SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+          echo "$KEYCHAIN_PATH" > $RUNNER_TEMP/keychain_path.txt
+          echo "SIGNING_ENABLED=true" >> $GITHUB_ENV
+      
+      - name: Sign app bundle
+        if: env.SIGNING_ENABLED == 'true'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ env.MACOS_SIGNING_IDENTITY }}
+        run: |
+          # Ensure keychain is accessible for signing
+          if [ -f $RUNNER_TEMP/keychain_path.txt ]; then
+            KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
+            security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+            security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          fi
+          ./scripts/sign_app.sh
+      
+      - name: Create DMG
+        run: |
+          ./scripts/create_dmg.sh
+      
+      - name: Rename DMG with architecture
+        run: |
+          cd export
+          if [ -f "BlackHoleSim-1.0.dmg" ]; then
+            mv "BlackHoleSim-1.0.dmg" "BlackHoleSim-1.0-${{ matrix.arch }}.dmg"
+          fi
+      
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackHoleSim-${{ matrix.arch }}-dmg
+          path: export/BlackHoleSim-1.0-${{ matrix.arch }}.dmg
+          retention-days: 30
+          if-no-files-found: error
+      
+      - name: Upload app bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackHoleSim-${{ matrix.arch }}-app
+          path: export/BlackHoleSim.app
+          retention-days: 30
+          if-no-files-found: error
+      
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          if [ -f $RUNNER_TEMP/keychain_path.txt ]; then
+            KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
+            security delete-keychain "$KEYCHAIN_PATH" || true
+            security list-keychain -d user -s login.keychain || true
+          fi
+      
+      - name: Summary
+        run: |
+          echo "## Build Summary for ${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Architecture: ${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Triplet: ${{ matrix.triplet }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ${{ matrix.runner }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+            echo "- ✅ Code signed: Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚠️ Code signed: No (secrets not configured)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- DMG: BlackHoleSim-1.0-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
+
