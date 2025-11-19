@@ -99,6 +99,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-
       
+      - name: Install build dependencies
+        run: |
+          # Install nasm required for ffmpeg build
+          brew install nasm
+      
       - name: Install dependencies
         run: |
           ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}
