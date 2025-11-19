@@ -4,3 +4,27 @@ blackhole_sim
 vcpkg/
 vcpkg_installed/
 .DS_Store
+
+# Sensitive files (certificates, keys, credentials)
+*.p12
+*.pem
+*.key
+*.cer
+*.cert
+*.pwd
+*.env
+*.secret
+*secret*
+*password*
+*credential*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.AppleDouble
+.LSOverride
