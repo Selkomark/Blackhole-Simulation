@@ -20,8 +20,9 @@ rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 
-# Copy executable
+# Copy executable and set execute permissions
 cp "${EXPORT_DIR}/blackhole_sim" "${MACOS_DIR}/${APP_NAME}"
+chmod +x "${MACOS_DIR}/${APP_NAME}"
 
 # Note: Libraries are statically linked, so no need to copy .dylib files
 # If you need dynamic libraries in the future, uncomment the Frameworks section below
@@ -29,6 +30,14 @@ cp "${EXPORT_DIR}/blackhole_sim" "${MACOS_DIR}/${APP_NAME}"
 # Copy assets
 if [ -d "assets" ]; then
     cp -r assets "${RESOURCES_DIR}/"
+fi
+
+# Copy Metal shader library
+if [ -f "build/default.metallib" ]; then
+    cp "build/default.metallib" "${RESOURCES_DIR}/"
+    echo "✓ Copied Metal shader library"
+else
+    echo "⚠ Warning: Metal shader library not found at build/default.metallib"
 fi
 
 # Create Info.plist

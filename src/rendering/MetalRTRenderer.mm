@@ -51,19 +51,40 @@ MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
 
     // Load Metal library
     NSError *error = nil;
-
-    // Try to load from file first
-    NSString *libraryPath = @"build/default.metallib";
     id<MTLLibrary> library = nil;
 
-    if ([[NSFileManager defaultManager] fileExistsAtPath:libraryPath]) {
-      NSURL *libraryURL = [NSURL fileURLWithPath:libraryPath];
+    // First, try to load from app bundle Resources directory
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *bundleLibraryPath = [bundle pathForResource:@"default" ofType:@"metallib"];
+    
+    if (bundleLibraryPath) {
+      NSURL *libraryURL = [NSURL fileURLWithPath:bundleLibraryPath];
       library = [renderer->device newLibraryWithURL:libraryURL error:&error];
+      if (library) {
+        NSLog(@"Loaded Metal library from bundle: %@", bundleLibraryPath);
+      } else {
+        NSLog(@"Failed to load Metal library from bundle: %@", error);
+      }
     }
 
-    // Fallback to default library
+    // Fallback: try relative path (for development)
+    if (!library) {
+      NSString *devLibraryPath = @"build/default.metallib";
+      if ([[NSFileManager defaultManager] fileExistsAtPath:devLibraryPath]) {
+        NSURL *libraryURL = [NSURL fileURLWithPath:devLibraryPath];
+        library = [renderer->device newLibraryWithURL:libraryURL error:&error];
+        if (library) {
+          NSLog(@"Loaded Metal library from development path: %@", devLibraryPath);
+        }
+      }
+    }
+
+    // Final fallback: try default library (embedded in app)
     if (!library) {
       library = [renderer->device newDefaultLibrary];
+      if (library) {
+        NSLog(@"Using default Metal library");
+      }
     }
 
     if (!library) {

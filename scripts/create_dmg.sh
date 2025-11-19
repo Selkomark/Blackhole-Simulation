@@ -34,9 +34,12 @@ cp -R "${APP_BUNDLE}" "${DMG_DIR}/"
 # Create Applications symlink
 ln -s /Applications "${DMG_DIR}/Applications"
 
-# Create README if it exists
-if [ -f "README.md" ]; then
-    cp README.md "${DMG_DIR}/README.txt"
+# Copy README if it exists
+if [ -f "README_DMG.txt" ]; then
+    cp README_DMG.txt "${DMG_DIR}/README.txt"
+    echo "✓ Added README.txt to DMG"
+else
+    echo "⚠ Warning: README_DMG.txt not found, skipping README in DMG"
 fi
 
 # Calculate size needed for DMG
@@ -71,8 +74,11 @@ tell application "Finder"
         set viewOptions to the icon view options of container window
         set arrangement of viewOptions to not arranged
         set icon size of viewOptions to 72
-        set position of item "${APP_BUNDLE}" of container window to {160, 205}
+        set position of item "${APP_NAME}.app" of container window to {160, 205}
         set position of item "Applications" of container window to {360, 205}
+        if exists file "README.txt" then
+            set position of item "README.txt" of container window to {160, 320}
+        end if
         close
     end tell
 end tell

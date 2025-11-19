@@ -16,7 +16,11 @@ Features
 Getting Started
 ---------------
 1. Drag BlackHoleSim.app to your Applications folder
-2. Double-click to launch
+2. IMPORTANT: On first launch, macOS may block the app. To open it:
+   - Right-click (or Control-click) on BlackHoleSim.app
+   - Select "Open" from the context menu
+   - Click "Open" in the security dialog
+   - Alternatively, run from Terminal: open /Applications/BlackHoleSim.app
 3. Use the on-screen hints (press Tab) to learn controls
 
 Controls

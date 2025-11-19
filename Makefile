@@ -88,6 +88,10 @@ $(TARGET): $(METAL_LIB) $(OBJECTS) | $(EXPORT_DIR)
 run: $(TARGET)
 	./$(TARGET)
 
+# Launch app bundle (bypasses Gatekeeper for unnotarized apps)
+launch: app
+	@./scripts/launch_app.sh
+
 # Create macOS app bundle
 app: $(TARGET)
 	@./scripts/create_app_bundle.sh

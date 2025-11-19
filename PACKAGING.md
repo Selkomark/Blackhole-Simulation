@@ -44,6 +44,99 @@ make dmg      # Create DMG file
    - For testing: Development certificate
    - Get from: [Apple Developer Portal](https://developer.apple.com/account/)
 
+### Obtaining a Developer ID Application Certificate
+
+To distribute your app outside the App Store, you need a **Developer ID Application** certificate:
+
+#### Step 1: Enroll in Apple Developer Program
+- Sign up at [developer.apple.com/programs](https://developer.apple.com/programs/)
+- Annual fee: $99 USD
+- Required for Developer ID certificates
+
+#### Step 2: Generate a Certificate Signing Request (CSR)
+1. Open **Keychain Access** (Applications > Utilities)
+2. Go to **Keychain Access** > **Certificate Assistant** > **Request a Certificate From a Certificate Authority**
+3. Fill in:
+   - **User Email Address**: Your Apple ID email
+   - **Common Name**: Your name or organization name
+   - **CA Email Address**: Leave blank
+   - Select **Saved to disk**
+4. Click **Continue** and save the `.certSigningRequest` file
+
+#### Step 3: Create Developer ID Certificate
+1. Log in to [Apple Developer Portal](https://developer.apple.com/account/)
+2. Navigate to **Certificates, Identifiers & Profiles**
+3. Click the **+** button (top left)
+4. Under **Software**, select **Developer ID Application**
+5. Click **Continue**
+6. Upload your CSR file (from Step 2)
+7. Click **Continue**, then **Download**
+8. Save the `.cer` file
+
+#### Step 4: Install the Certificate
+
+**Method 1: Double-click (Recommended)**
+1. Double-click the downloaded `.cer` file
+2. It will open in Keychain Access and install automatically
+3. Verify installation:
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+   You should see: `Developer ID Application: Your Name (TEAM_ID)`
+
+**Method 2: Manual Import via Keychain Access**
+If double-clicking fails:
+1. Open **Keychain Access** (Applications > Utilities)
+2. Select **login** keychain (or **System** if you have admin rights)
+3. Go to **File** > **Import Items...**
+4. Select your `.cer` file
+5. Enter your password if prompted
+
+**Method 3: Command Line Import**
+If GUI methods fail:
+```bash
+security import /path/to/certificate.cer -k ~/Library/Keychains/login.keychain-db
+```
+
+**Troubleshooting Import Errors:**
+
+**Error -25294 (Duplicate Item):**
+- The certificate may already exist. Check Keychain Access > **My Certificates**
+- Delete any existing/expired Developer ID certificates
+- Try importing again
+
+**Error -25299 (Invalid Certificate):**
+- Re-download the certificate from Apple Developer Portal
+- Ensure you're importing the correct certificate type (Developer ID Application, not Development)
+
+**Certificate Not Showing Up:**
+- Make sure you're looking in the correct keychain (usually **login**)
+- Check **My Certificates** category in Keychain Access
+- Verify with: `security find-identity -v -p codesigning`
+
+#### Step 5: Use the Certificate
+Once installed, the signing script will automatically detect and use it:
+```bash
+make sign
+```
+
+Or set it manually:
+```bash
+export MACOS_SIGNING_IDENTITY='Developer ID Application: Your Name (TEAM_ID)'
+make sign
+```
+
+**Important**: Even with a Developer ID certificate, macOS **requires notarization** for the app to run without user intervention. See the [Notarization](#notarization-required-for-gatekeeper) section below.
+
+**For Testing (Without Notarization):**
+If you need to test the app before notarization:
+1. Right-click (or Control-click) on `BlackHoleSim.app`
+2. Select **Open** from the context menu
+3. Click **Open** in the security dialog
+4. macOS will remember this choice for future launches
+
+**Note**: Developer ID certificates are valid for 5 years. Keep your CSR file safe for renewals.
+
 ## Build Outputs
 
 All build outputs are placed in the `export/` folder:
@@ -134,7 +227,17 @@ The DMG script creates a basic DMG. To customize:
 
 ## Notarization (Required for Gatekeeper)
 
-After signing, you should notarize the app for distribution:
+After signing with a Developer ID certificate, you should notarize the app for distribution. Notarization allows macOS Gatekeeper to verify your app without user intervention.
+
+### Prerequisites
+1. **Developer ID Application certificate** (see above)
+2. **App-specific password** for your Apple ID:
+   - Go to [appleid.apple.com](https://appleid.apple.com)
+   - Sign in > **Sign-In and Security** > **App-Specific Passwords**
+   - Click **Generate an app-specific password**
+   - Name it (e.g., "Notarization") and copy the password
+
+### Notarization Steps
 
 ```bash
 # 1. Create zip for notarization
@@ -148,20 +251,62 @@ xcrun notarytool submit BlackHoleSim.zip \
     --password "app-specific-password" \
     --wait
 
-# 3. Staple the ticket
+# 3. Staple the ticket to the app
 xcrun stapler staple BlackHoleSim.app
 
-# 4. Recreate DMG
+# 4. Verify notarization
+xcrun stapler validate BlackHoleSim.app
+
+# 5. Recreate DMG (with notarized app)
 cd ..
 make dmg
+```
+
+**Note**: Notarization typically takes 5-15 minutes. The `--wait` flag will poll until complete.
+
+### Alternative: Using Keychain Profile
+
+You can store credentials in Keychain to avoid entering them each time:
+
+```bash
+# Store credentials
+xcrun notarytool store-credentials "notary-profile" \
+    --apple-id "your@email.com" \
+    --team-id "TEAM_ID" \
+    --password "app-specific-password"
+
+# Use stored profile
+xcrun notarytool submit BlackHoleSim.zip \
+    --keychain-profile "notary-profile" \
+    --wait
 ```
 
 ## Testing
 
 ### Test App Bundle
+
+**Important**: If the app is signed with Developer ID but not notarized, macOS Gatekeeper will block it when using `open` or double-clicking. Use one of these methods:
+
+**Method 1: Direct Launch (Recommended for Testing)**
 ```bash
+./scripts/launch_app.sh
+# Or directly:
+./export/BlackHoleSim.app/Contents/MacOS/BlackHoleSim
+```
+
+**Method 2: Bypass Gatekeeper via Finder**
+1. Right-click (or Control-click) on `BlackHoleSim.app`
+2. Select **Open** from the context menu
+3. Click **Open** in the security dialog
+4. macOS will remember this choice
+
+**Method 3: Remove Quarantine (Temporary)**
+```bash
+xattr -dr com.apple.quarantine export/BlackHoleSim.app
 open export/BlackHoleSim.app
 ```
+
+**Note**: For distribution, you must notarize the app (see Notarization section above).
 
 ### Test DMG
 ```bash

@@ -1,14 +1,48 @@
 #import <Cocoa/Cocoa.h>
 #import <SDL2/SDL.h>
+#import <cstring>
+
+// Get the path to the app bundle's Resources directory
+const char* getBundleResourcesPath() {
+    @autoreleasepool {
+        NSBundle* bundle = [NSBundle mainBundle];
+        NSString* resourcesPath = [bundle resourcePath];
+        if (resourcesPath) {
+            // Return a C string that persists (static storage)
+            static char path[1024];
+            strncpy(path, [resourcesPath UTF8String], sizeof(path) - 1);
+            path[sizeof(path) - 1] = '\0';
+            return path;
+        }
+        return nullptr;
+    }
+}
 
 // Load PNG icon and set as SDL window icon
+// iconPath can be relative to Resources directory or absolute
 void loadWindowIcon(SDL_Window* window, const char* iconPath) {
     @autoreleasepool {
-        NSString* path = [NSString stringWithUTF8String:iconPath];
-        NSImage* image = [[NSImage alloc] initWithContentsOfFile:path];
+        NSString* pathStr = nil;
+        
+        // If path is absolute, use it directly
+        if (iconPath[0] == '/') {
+            pathStr = [NSString stringWithUTF8String:iconPath];
+        } else {
+            // Try to resolve relative to bundle Resources first
+            const char* resourcesPath = getBundleResourcesPath();
+            if (resourcesPath) {
+                NSString* resourcesPathStr = [NSString stringWithUTF8String:resourcesPath];
+                pathStr = [resourcesPathStr stringByAppendingPathComponent:[NSString stringWithUTF8String:iconPath]];
+            } else {
+                // Fallback to relative path (for development)
+                pathStr = [NSString stringWithUTF8String:iconPath];
+            }
+        }
+        
+        NSImage* image = [[NSImage alloc] initWithContentsOfFile:pathStr];
         
         if (!image) {
-            NSLog(@"Failed to load icon from: %@", path);
+            NSLog(@"Failed to load icon from: %@", pathStr);
             return;
         }
         

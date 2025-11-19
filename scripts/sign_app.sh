@@ -155,14 +155,25 @@ echo ""
 echo "🔐 Signing app with identity: ${IDENTITY}"
 echo ""
 
-# Sign the executable
+# Sign the executable first, then the bundle
 echo "✍️  Signing application..."
-if ! codesign --force --deep --sign "${IDENTITY}" \
+# Sign the main executable
+if ! codesign --force --sign "${IDENTITY}" \
+    --options runtime \
+    --entitlements scripts/entitlements.plist \
+    "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" 2>&1; then
+    echo ""
+    echo "❌ Signing executable failed!"
+    exit 1
+fi
+
+# Sign the app bundle (without --deep, which is deprecated)
+if ! codesign --force --sign "${IDENTITY}" \
     --options runtime \
     --entitlements scripts/entitlements.plist \
     "${APP_BUNDLE}" 2>&1; then
     echo ""
-    echo "❌ Signing failed!"
+    echo "❌ Signing app bundle failed!"
     exit 1
 fi
 
@@ -192,8 +203,11 @@ echo ""
 # Verify with spctl (Gatekeeper assessment)
 echo "🛡️  Gatekeeper assessment:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# Temporarily disable set -e for spctl since it returns non-zero for non-notarized apps (expected)
+set +e
 SPCTL_OUTPUT=$(spctl --assess --verbose "${APP_BUNDLE}" 2>&1)
 SPCTL_EXIT=$?
+set -e
 
 if [ $SPCTL_EXIT -eq 0 ]; then
     echo "✅ Gatekeeper assessment passed"

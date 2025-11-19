@@ -22,18 +22,22 @@ Application::~Application() {
 
 bool Application::initialize() {
   // Initialize SDL
+  std::cerr << "[INIT] Initializing SDL..." << std::endl;
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+    std::cerr << "[ERROR] SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  std::cerr << "[OK] SDL initialized successfully" << std::endl;
 
   // Initialize resolution manager (loads saved resolution or defaults to 1080p)
+  std::cerr << "[INIT] Creating resolution manager..." << std::endl;
   resolutionManager = new ResolutionManager();
   
   // Get selected resolution for rendering
   const Resolution& res = resolutionManager->getCurrent();
   renderWidth = res.width;
   renderHeight = res.height;
+  std::cerr << "[OK] Resolution manager initialized: " << renderWidth << "x" << renderHeight << std::endl;
   
   // Window size - use a reasonable default that matches common screen sizes
   // This will be the display size, rendering resolution is separate
@@ -41,22 +45,26 @@ bool Application::initialize() {
   windowHeight = 1080;
 
   // Initialize SDL_ttf
+  std::cerr << "[INIT] Initializing SDL_ttf..." << std::endl;
   if (TTF_Init() < 0) {
-    std::cerr << "SDL_ttf could not initialize! TTF_Error: " << TTF_GetError() << std::endl;
+    std::cerr << "[ERROR] SDL_ttf could not initialize! TTF_Error: " << TTF_GetError() << std::endl;
     return false;
   }
+  std::cerr << "[OK] SDL_ttf initialized successfully" << std::endl;
 
   // Create window (resizable)
+  std::cerr << "[INIT] Creating window (" << windowWidth << "x" << windowHeight << ")..." << std::endl;
   window = SDL_CreateWindow("Black Hole Simulation | Smooth Orbit",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                              windowWidth, windowHeight,
                              SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   if (!window) {
-    std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+    std::cerr << "[ERROR] Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  std::cerr << "[OK] Window created successfully" << std::endl;
   
-  // Load and set window icon
+  // Load and set window icon (path relative to Resources directory in bundle)
   loadWindowIcon(window, "assets/export/iOS-Default-1024x1024@1x.png");
   
   // Get actual window size (may differ due to high DPI)
@@ -66,11 +74,13 @@ bool Application::initialize() {
   windowHeight = actualHeight;
 
   // Create SDL renderer (without VSYNC to prevent pausing when idle)
+  std::cerr << "[INIT] Creating SDL renderer..." << std::endl;
   sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!sdlRenderer) {
-    std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+    std::cerr << "[ERROR] Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  std::cerr << "[OK] SDL renderer created successfully" << std::endl;
   
   // Set default render draw color to black
   SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
@@ -95,12 +105,14 @@ bool Application::initialize() {
   }
 
   // Initialize GPU renderer (Metal) with rendering resolution
+  std::cerr << "[INIT] Initializing Metal renderer at " << renderWidth << "x" << renderHeight << "..." << std::endl;
   gpuRenderer = metal_rt_renderer_create(renderWidth, renderHeight);
   if (!gpuRenderer) {
-    std::cerr << "ERROR: GPU renderer failed to initialize!\n";
-    std::cerr << "Metal GPU acceleration is required for this simulation.\n";
+    std::cerr << "[ERROR] GPU renderer failed to initialize!" << std::endl;
+    std::cerr << "[ERROR] Metal GPU acceleration is required for this simulation." << std::endl;
     return false;
   }
+  std::cerr << "[OK] Metal renderer initialized successfully" << std::endl;
 
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
                                   SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
@@ -121,6 +133,7 @@ bool Application::initialize() {
   videoRecorder = new VideoRecorder();
 
   running = true;
+  std::cerr << "Application initialization complete, entering main loop" << std::endl;
   return true;
 }
 
