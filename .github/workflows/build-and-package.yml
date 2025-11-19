@@ -49,11 +49,19 @@ jobs:
           echo "TRIPLET=${{ matrix.triplet }}" >> $GITHUB_ENV
           echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
       
+      - name: Clone vcpkg
+        run: |
+          if [ ! -d "vcpkg" ]; then
+            git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          fi
+      
       - name: Make scripts executable
         run: |
           chmod +x scripts/*.sh
           chmod +x sign_package.sh
-          chmod +x vcpkg/bootstrap-vcpkg.sh
+          if [ -f "vcpkg/bootstrap-vcpkg.sh" ]; then
+            chmod +x vcpkg/bootstrap-vcpkg.sh
+          fi
       
       - name: Bootstrap vcpkg
         run: |
