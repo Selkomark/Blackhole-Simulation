@@ -94,7 +94,7 @@ app: $(TARGET)
 
 # Sign the app bundle (requires MACOS_SIGNING_IDENTITY env var)
 sign: app
-	@./scripts/sign_app.sh
+	./scripts/sign_app.sh
 
 # Create DMG for distribution
 dmg: app

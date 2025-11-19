@@ -73,17 +73,17 @@ if [ -f "assets/export/iOS-Default-1024x1024@1x.png" ]; then
         ICONSET_DIR="${RESOURCES_DIR}/AppIcon.iconset"
         mkdir -p "${ICONSET_DIR}"
         
-        # Create various sizes for iconset
-        sips -z 16 16 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_16x16.png" 2>/dev/null || true
-        sips -z 32 32 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_16x16@2x.png" 2>/dev/null || true
-        sips -z 32 32 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_32x32.png" 2>/dev/null || true
-        sips -z 64 64 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_32x32@2x.png" 2>/dev/null || true
-        sips -z 128 128 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_128x128.png" 2>/dev/null || true
-        sips -z 256 256 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_128x128@2x.png" 2>/dev/null || true
-        sips -z 256 256 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_256x256.png" 2>/dev/null || true
-        sips -z 512 512 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_256x256@2x.png" 2>/dev/null || true
-        sips -z 512 512 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_512x512.png" 2>/dev/null || true
-        cp "assets/export/iOS-Default-1024x1024@1x.png" "${ICONSET_DIR}/icon_512x512@2x.png" 2>/dev/null || true
+        # Create various sizes for iconset (suppress verbose sips output)
+        sips -z 16 16 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null 2>&1 || true
+        sips -z 32 32 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null 2>&1 || true
+        sips -z 32 32 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null 2>&1 || true
+        sips -z 64 64 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null 2>&1 || true
+        sips -z 128 128 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null 2>&1 || true
+        sips -z 256 256 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null 2>&1 || true
+        sips -z 256 256 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null 2>&1 || true
+        sips -z 512 512 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null 2>&1 || true
+        sips -z 512 512 "assets/export/iOS-Default-1024x1024@1x.png" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null 2>&1 || true
+        cp "assets/export/iOS-Default-1024x1024@1x.png" "${ICONSET_DIR}/icon_512x512@2x.png" >/dev/null 2>&1 || true
         
         # Create icns file
         iconutil -c icns "${ICONSET_DIR}" -o "${ICON_PATH}" 2>/dev/null || true

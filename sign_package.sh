@@ -42,7 +42,8 @@ echo "✓ App bundle created: ${APP_BUNDLE}"
 
 # Step 4: Sign the app (optional)
 echo "[4/4] Signing application..."
-if ! make sign 2>&1; then
+# Run signing - script will handle interactive/non-interactive mode
+if ! make sign; then
     echo "  ⚠ Signing failed or skipped"
     SKIP_SIGN=true
 else
