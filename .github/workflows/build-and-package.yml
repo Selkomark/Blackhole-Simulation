@@ -447,6 +447,8 @@ jobs:
     needs: build
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'prod-v')
     runs-on: macos-latest
+    permissions:
+      contents: write # Required to create/update releases and upload release assets
 
     steps:
       - name: Extract version from tag
