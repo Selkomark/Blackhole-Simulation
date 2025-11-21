@@ -264,6 +264,28 @@ Quick start:
 
 This will build, sign (if certificate available), and create a DMG file in the `export/` folder.
 
+### Notarization (Required for Distribution)
+
+After signing with a Developer ID certificate, you must notarize the app for distribution:
+
+```bash
+# Set up credentials (one-time setup)
+xcrun notarytool store-credentials "notary-profile" \
+    --apple-id "your@email.com" \
+    --team-id "TEAM_ID" \
+    --password "app-specific-password"
+
+export NOTARY_KEYCHAIN_PROFILE="notary-profile"
+
+# Run notarization
+make notarize
+
+# Recreate DMG with notarized app
+make dmg
+```
+
+See [PACKAGING.md](PACKAGING.md#notarization-required-for-gatekeeper) for detailed notarization instructions.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

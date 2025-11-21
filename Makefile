@@ -102,6 +102,10 @@ app: $(TARGET)
 sign: app
 	./scripts/sign_app.sh
 
+# Notarize the app bundle (requires NOTARY_KEYCHAIN_PROFILE or NOTARY_APPLE_ID/TEAM_ID/PASSWORD)
+notarize: sign
+	@./scripts/notarize_app.sh
+
 # Create DMG for distribution
 dmg: app
 	@./scripts/create_dmg.sh
@@ -120,4 +124,4 @@ clean:
 # Rebuild from scratch
 rebuild: clean all
 
-.PHONY: all run clean rebuild app sign dmg release package
+.PHONY: all run clean rebuild app sign notarize dmg release package

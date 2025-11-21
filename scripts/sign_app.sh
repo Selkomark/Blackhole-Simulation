@@ -36,19 +36,41 @@ select_signing_identity() {
         return 1
     fi
     
-    # Parse and display identities
+    # Parse and display identities, prioritizing Developer ID
     local count=1
     local identity_map=()
+    local dev_id_map=()
+    
     while IFS= read -r line; do
         # Extract the identity string (everything between quotes)
         local identity=$(echo "$line" | sed -n 's/.*"\(.*\)".*/\1/p')
         if [ -n "$identity" ]; then
-            echo "  [$count] $identity" >&2
-            identity_map+=("$identity")
-            ((count++))
+            # Check if it's a Developer ID certificate
+            if echo "$identity" | grep -q "Developer ID Application"; then
+                dev_id_map+=("$identity")
+            else
+                identity_map+=("$identity")
+            fi
         fi
     done < "$temp_file"
     rm -f "$temp_file"
+    
+    # Combine: Developer ID first, then others
+    local all_identities=("${dev_id_map[@]}" "${identity_map[@]}")
+    
+    # Display identities
+    local display_count=1
+    for identity in "${all_identities[@]}"; do
+        local prefix="  "
+        if echo "$identity" | grep -q "Developer ID Application"; then
+            prefix="⭐"  # Mark Developer ID certificates
+        fi
+        echo "${prefix} [${display_count}] $identity" >&2
+        ((display_count++))
+    done
+    
+    # Update identity_map to the combined list
+    identity_map=("${all_identities[@]}")
     
     if [ ${#identity_map[@]} -eq 0 ]; then
         echo "❌ No valid identities found." >&2
@@ -156,11 +178,26 @@ echo ""
 echo "🔐 Signing app with identity: ${IDENTITY}"
 echo ""
 
+# Check if using Developer ID certificate (required for notarization)
+IS_DEVELOPER_ID=false
+if echo "${IDENTITY}" | grep -q "Developer ID Application"; then
+    IS_DEVELOPER_ID=true
+fi
+
+# Warn if using Apple Development certificate and notarization might be expected
+if [ "$IS_DEVELOPER_ID" = false ] && [ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]; then
+    echo "⚠️  Warning: Using Apple Development certificate, but notarization credentials are set." >&2
+    echo "   Notarization requires a Developer ID Application certificate." >&2
+    echo "   The app will be signed but cannot be notarized with this certificate." >&2
+    echo "" >&2
+fi
+
 # Sign the executable first, then the bundle
 echo "✍️  Signing application..."
-# Sign the main executable
+# Sign the main executable with timestamp (required for notarization)
 if ! codesign --force --sign "${IDENTITY}" \
     --options runtime \
+    --timestamp \
     --entitlements scripts/entitlements.plist \
     "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" 2>&1; then
     echo ""
@@ -171,6 +208,7 @@ fi
 # Sign the app bundle (without --deep, which is deprecated)
 if ! codesign --force --sign "${IDENTITY}" \
     --options runtime \
+    --timestamp \
     --entitlements scripts/entitlements.plist \
     "${APP_BUNDLE}" 2>&1; then
     echo ""

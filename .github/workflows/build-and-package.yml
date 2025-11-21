@@ -24,6 +24,15 @@ name: Build and Package
 #   2. Base64 encode it: base64 -i YourCertificate.p12 | pbcopy
 #   3. Add it as a GitHub secret: MACOS_CERTIFICATE
 #   4. Add the certificate password as another secret: MACOS_CERTIFICATE_PASSWORD
+#
+# Notarization is enabled for production releases (tags) if NOTARY_APPLE_ID, NOTARY_TEAM_ID, and NOTARY_PASSWORD secrets are configured.
+# To set up notarization:
+#   1. Create an app-specific password at https://appleid.apple.com
+#   2. Add secrets:
+#      - NOTARY_APPLE_ID: Your Apple ID email
+#      - NOTARY_TEAM_ID: Your Team ID (e.g., "72583G5MNU")
+#      - NOTARY_PASSWORD: App-specific password (not your regular password)
+#   3. Notarization adds 5-15 minutes to build time but is required for distribution
 
 on:
   push:
@@ -396,6 +405,23 @@ jobs:
             security unlock-keychain -p "" "$KEYCHAIN_PATH"
           fi
           ./scripts/sign_app.sh
+
+      - name: Notarize app bundle
+        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag' && secrets.NOTARY_APPLE_ID != ''
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        timeout-minutes: 20
+        run: |
+          echo "🚀 Starting notarization (production release)..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⏱️  Notarization typically takes 5-15 minutes"
+          echo "   This is Apple's server-side security scan - cannot be sped up"
+          echo "   The workflow will wait automatically..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          ./scripts/notarize_app.sh
+          echo "✅ Notarization complete"
 
       - name: Create DMG
         env:

@@ -227,7 +227,7 @@ The DMG script creates a basic DMG. To customize:
 
 ## Notarization (Required for Gatekeeper)
 
-After signing with a Developer ID certificate, you should notarize the app for distribution. Notarization allows macOS Gatekeeper to verify your app without user intervention.
+After signing with a Developer ID certificate, you **must** notarize the app for distribution. Notarization allows macOS Gatekeeper to verify your app without user intervention. Without notarization, users will see a warning that the app cannot be opened.
 
 ### Prerequisites
 1. **Developer ID Application certificate** (see above)
@@ -236,26 +236,95 @@ After signing with a Developer ID certificate, you should notarize the app for d
    - Sign in > **Sign-In and Security** > **App-Specific Passwords**
    - Click **Generate an app-specific password**
    - Name it (e.g., "Notarization") and copy the password
+   - **Important**: Use an app-specific password, not your regular Apple ID password
 
-### Notarization Steps
+### Automated Notarization (Recommended)
+
+The project includes an automated notarization script that handles all steps:
+
+#### Step 1: Set Up Credentials
+
+**Option A: Keychain Profile (Recommended - Set Once)**
+
+Store your credentials securely in the macOS Keychain:
+
+```bash
+xcrun notarytool store-credentials "notary-profile" \
+    --apple-id "your@email.com" \
+    --team-id "TEAM_ID" \
+    --password "app-specific-password"
+
+export NOTARY_KEYCHAIN_PROFILE="notary-profile"
+```
+
+**Option B: Environment Variables**
+
+Set environment variables before running notarization:
+
+```bash
+export NOTARY_APPLE_ID="mahan@selkomark.com"
+export NOTARY_TEAM_ID="72583G5MNU"  # Your Team ID (e.g., "72583G5MNU")
+export NOTARY_PASSWORD="app-specific-password"
+```
+
+**Option C: Interactive Prompt**
+
+If credentials aren't set, the script will prompt you interactively.
+
+#### Step 2: Run Notarization
+
+```bash
+make notarize
+```
+
+Or run the script directly:
+
+```bash
+./scripts/notarize_app.sh
+```
+
+The script will:
+1. ✅ Verify the app is signed
+2. 📦 Create a zip file for submission
+3. 📤 Submit to Apple's notarization service
+4. ⏳ Wait for completion (typically 5-15 minutes)
+5. 📎 Staple the notarization ticket to the app
+6. 🔍 Verify notarization and Gatekeeper status
+
+#### Step 3: Recreate DMG
+
+After successful notarization, recreate the DMG with the notarized app:
+
+```bash
+make dmg
+```
+
+### Manual Notarization Steps
+
+If you prefer to run the steps manually:
 
 ```bash
 # 1. Create zip for notarization
 cd export
-ditto -c -k --keepParent BlackHoleSim.app BlackHoleSim.zip
+ditto -c -k --keepParent "Blackhole Simulation.app" "Blackhole Simulation.zip"
 
-# 2. Submit for notarization
-xcrun notarytool submit BlackHoleSim.zip \
+# 2. Submit for notarization (using keychain profile)
+xcrun notarytool submit "Blackhole Simulation.zip" \
+    --keychain-profile "notary-profile" \
+    --wait
+
+# Or using direct credentials:
+xcrun notarytool submit "Blackhole Simulation.zip" \
     --apple-id "your@email.com" \
     --team-id "TEAM_ID" \
     --password "app-specific-password" \
     --wait
 
 # 3. Staple the ticket to the app
-xcrun stapler staple BlackHoleSim.app
+xcrun stapler staple "Blackhole Simulation.app"
 
 # 4. Verify notarization
-xcrun stapler validate BlackHoleSim.app
+xcrun stapler validate "Blackhole Simulation.app"
 
 # 5. Recreate DMG (with notarized app)
 cd ..
@@ -264,22 +333,32 @@ make dmg
 
 **Note**: Notarization typically takes 5-15 minutes. The `--wait` flag will poll until complete.
 
-### Alternative: Using Keychain Profile
+### Troubleshooting Notarization
 
-You can store credentials in Keychain to avoid entering them each time:
+**Error: "Invalid Apple ID or password"**
+- Ensure you're using an **app-specific password**, not your regular Apple ID password
+- Verify your Apple ID email is correct
+- Check that 2FA is enabled on your Apple ID (required for app-specific passwords)
 
-```bash
-# Store credentials
-xcrun notarytool store-credentials "notary-profile" \
-    --apple-id "your@email.com" \
-    --team-id "TEAM_ID" \
-    --password "app-specific-password"
+**Error: "Team ID mismatch"**
+- Verify your Team ID matches the one in your Developer ID certificate
+- Check with: `codesign -dvv "export/Blackhole Simulation.app" | grep TeamIdentifier`
 
-# Use stored profile
-xcrun notarytool submit BlackHoleSim.zip \
-    --keychain-profile "notary-profile" \
-    --wait
-```
+**Error: "Notarization failed"**
+- Check the notarization logs:
+  ```bash
+  xcrun notarytool log <SUBMISSION_ID> --keychain-profile "notary-profile"
+  ```
+- Common issues:
+  - Missing entitlements
+  - Unsigned helper tools
+  - Hardened runtime violations
+  - Missing Info.plist entries
+
+**Gatekeeper still rejects after notarization**
+- Wait a few minutes for Apple's CDN to propagate the notarization ticket
+- Verify stapling: `xcrun stapler validate "export/Blackhole Simulation.app"`
+- Check Gatekeeper: `spctl --assess --verbose "export/Blackhole Simulation.app"`
 
 ## Testing
 
@@ -374,14 +453,20 @@ export/
 ## Environment Variables
 
 - `MACOS_SIGNING_IDENTITY`: Code signing identity (e.g., "Developer ID Application: Name (TEAM_ID)")
+- `NOTARY_KEYCHAIN_PROFILE`: Keychain profile name for notarization (recommended)
+- `NOTARY_APPLE_ID`: Apple ID email for notarization (alternative to keychain profile)
+- `NOTARY_TEAM_ID`: Team ID for notarization (alternative to keychain profile)
+- `NOTARY_PASSWORD`: App-specific password for notarization (alternative to keychain profile)
 
 ## Distribution Checklist
 
 - [ ] Application builds successfully
 - [ ] App bundle created and tested
 - [ ] Application signed with Developer ID certificate
-- [ ] Application notarized (for Gatekeeper)
-- [ ] DMG created and tested
+- [ ] Application notarized (for Gatekeeper) - **Required for distribution**
+- [ ] Notarization verified (`xcrun stapler validate`)
+- [ ] Gatekeeper assessment passed (`spctl --assess`)
+- [ ] DMG created and tested (with notarized app)
 - [ ] DMG tested on clean macOS system
 - [ ] Icon displays correctly
 - [ ] All assets included in bundle
@@ -391,5 +476,7 @@ export/
 - `sign_package.sh` - One-stop build, sign, and package script
 - `scripts/create_app_bundle.sh` - App bundle creation script
 - `scripts/sign_app.sh` - Code signing script
+- `scripts/notarize_app.sh` - Automated notarization script
 - `scripts/create_dmg.sh` - DMG creation script
+- `scripts/launch_app.sh` - Launch app (bypasses Gatekeeper for testing)
 - `scripts/entitlements.plist` - Code signing entitlements
