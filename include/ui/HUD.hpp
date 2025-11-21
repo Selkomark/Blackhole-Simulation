@@ -13,7 +13,10 @@ public:
   HUD(SDL_Renderer *renderer, TTF_Font *font);
   
   // Render the hints overlay
-  void renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, class ResolutionManager* resolutionManager, int colorMode = 0, float colorIntensity = 1.0f);
+  void renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, class ResolutionManager* resolutionManager, int colorMode = 0, float colorIntensity = 1.0f, bool isMusicMuted = false);
+  
+  // Render music credits
+  void renderMusicCredits(bool isMusicMuted, int windowWidth, int windowHeight);
   
   // Render camera axis indicators
   void renderCameraAxes(const Camera *camera, int windowWidth, int windowHeight);

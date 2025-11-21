@@ -4,7 +4,7 @@
 #include <cstdint>
 
 /**
- * Video recorder for capturing frames and encoding to video file
+ * Video recorder for capturing frames and encoding to video file with audio
  */
 class VideoRecorder {
 public:
@@ -12,9 +12,9 @@ public:
   ~VideoRecorder();
   
   // Start recording to a file
-  bool startRecording(const std::string& filename, int width, int height, int fps = 60);
+  bool startRecording(const std::string& filename, int width, int height, int fps = 60, const std::string& audioFile = "");
   
-  // Stop recording and finalize video file
+  // Stop recording and finalize video file (mixes audio if provided)
   void stopRecording();
   
   // Add a frame to the video (ARGB8888 format, 4 bytes per pixel)
@@ -32,6 +32,7 @@ public:
 private:
   bool recording;
   std::string filename;
+  std::string audioFilePath;
   int frameWidth;
   int frameHeight;
   int frameRate;
@@ -42,5 +43,8 @@ private:
   
   // Cleanup FFmpeg resources
   void cleanupEncoder();
+  
+  // Mux audio with video after recording
+  bool muxAudioWithVideo();
 };
 

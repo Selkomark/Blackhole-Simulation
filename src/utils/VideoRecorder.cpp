@@ -6,6 +6,7 @@
 #include <sstream>
 #include <cstdio>
 #include <sys/stat.h>
+#include <vector>
 
 // External logging function from main.cpp
 extern void appLog(const std::string& message, bool isError = false);
@@ -31,20 +32,21 @@ struct FFmpegContext {
 };
 
 VideoRecorder::VideoRecorder()
-    : recording(false), frameWidth(0), frameHeight(0), frameRate(60), ffmpegContext(nullptr) {
+    : recording(false), filename(""), audioFilePath(""), frameWidth(0), frameHeight(0), frameRate(60), ffmpegContext(nullptr) {
 }
 
 VideoRecorder::~VideoRecorder() {
   stopRecording();
 }
 
-bool VideoRecorder::startRecording(const std::string& file, int width, int height, int fps) {
+bool VideoRecorder::startRecording(const std::string& file, int width, int height, int fps, const std::string& audioFile) {
   if (recording) {
     std::cerr << "Already recording!" << std::endl;
     return false;
   }
   
   filename = file;
+  audioFilePath = audioFile;
   frameWidth = width;
   frameHeight = height;
   frameRate = fps;
@@ -62,6 +64,9 @@ bool VideoRecorder::startRecording(const std::string& file, int width, int heigh
   // Log the filename being used (for debugging)
   std::ostringstream logMsg;
   logMsg << "[FFMPEG] Recording filename: " << filename;
+  if (!audioFilePath.empty()) {
+    logMsg << " (with audio from " << audioFilePath << ")";
+  }
   appLog(logMsg.str());
   
   // Initialize encoder first, only set recording flag if successful
@@ -414,11 +419,35 @@ void VideoRecorder::stopRecording() {
     // Write trailer
     av_write_trailer(ctx->formatContext);
     
-    std::cout << "Stopped recording. Saved to: " << filename << std::endl;
+    std::cout << "Stopped recording. Video saved to: " << filename << std::endl;
+    appLog("[FFMPEG] Video encoding complete");
   }
   
   cleanupEncoder();
   recording = false;
+  
+  // Mux audio with video if audio file was provided
+  if (!audioFilePath.empty()) {
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "Mixing audio into video..." << std::endl;
+    std::cout << "Video file: " << filename << std::endl;
+    std::cout << "Audio file: " << audioFilePath << std::endl;
+    std::cout << "========================================" << std::endl;
+    appLog("[FFMPEG] Muxing audio with video...");
+    
+    if (muxAudioWithVideo()) {
+      std::cout << "✓ Audio mixed successfully!" << std::endl;
+      appLog("[FFMPEG] Audio muxing complete");
+    } else {
+      std::cerr << "✗ Failed to mix audio with video" << std::endl;
+      appLog("[FFMPEG] Audio muxing failed (video saved without audio)", true);
+    }
+  } else {
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "No audio file provided - video saved without audio" << std::endl;
+    std::cout << "========================================" << std::endl;
+    appLog("[FFMPEG] No audio file - video only");
+  }
 }
 
 bool VideoRecorder::moveFile(const std::string& newPath) {
@@ -503,5 +532,210 @@ void VideoRecorder::cleanupEncoder() {
     delete ctx;
     ffmpegContext = nullptr;
   }
+}
+
+bool VideoRecorder::muxAudioWithVideo() {
+  std::cout << "[MUXING] Starting audio muxing using vcpkg FFmpeg libraries..." << std::endl;
+  appLog("[FFMPEG] Starting audio muxing using vcpkg FFmpeg libraries...");
+  
+  std::string tempFilename = filename + ".temp.mp4";
+  
+  AVFormatContext* videoInputCtx = nullptr;
+  AVFormatContext* audioInputCtx = nullptr;
+  AVFormatContext* outputCtx = nullptr;
+  int ret;
+  
+  // Open video input
+  std::cout << "[MUXING] Opening video file: " << filename << std::endl;
+  ret = avformat_open_input(&videoInputCtx, filename.c_str(), nullptr, nullptr);
+  if (ret < 0) {
+    char errbuf[AV_ERROR_MAX_STRING_SIZE];
+    av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+    std::cerr << "[MUXING ERROR] Could not open video: " << errbuf << std::endl;
+    appLog("[FFMPEG] Could not open video input", true);
+    return false;
+  }
+  avformat_find_stream_info(videoInputCtx, nullptr);
+  std::cout << "[MUXING] Video file opened successfully" << std::endl;
+  
+  // Open audio input
+  std::cout << "[MUXING] Opening audio file: " << audioFilePath << std::endl;
+  ret = avformat_open_input(&audioInputCtx, audioFilePath.c_str(), nullptr, nullptr);
+  if (ret < 0) {
+    char errbuf[AV_ERROR_MAX_STRING_SIZE];
+    av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+    std::cerr << "[MUXING ERROR] Could not open audio: " << errbuf << std::endl;
+    appLog("[FFMPEG] Could not open audio input", true);
+    avformat_close_input(&videoInputCtx);
+    return false;
+  }
+  avformat_find_stream_info(audioInputCtx, nullptr);
+  std::cout << "[MUXING] Audio file opened successfully" << std::endl;
+  
+  // Create output
+  avformat_alloc_output_context2(&outputCtx, nullptr, nullptr, tempFilename.c_str());
+  if (!outputCtx) {
+    appLog("[FFMPEG] Could not create output context", true);
+    avformat_close_input(&videoInputCtx);
+    avformat_close_input(&audioInputCtx);
+    return false;
+  }
+  
+  // Map streams
+  int videoStreamIdx = -1;
+  int audioStreamIdx = -1;
+  int streamMapping[2] = {-1, -1};
+  
+  // Add video stream to output
+  for (unsigned int i = 0; i < videoInputCtx->nb_streams; i++) {
+    if (videoInputCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+      AVStream* outStream = avformat_new_stream(outputCtx, nullptr);
+      avcodec_parameters_copy(outStream->codecpar, videoInputCtx->streams[i]->codecpar);
+      outStream->codecpar->codec_tag = 0;
+      outStream->time_base = videoInputCtx->streams[i]->time_base;
+      videoStreamIdx = i;
+      streamMapping[0] = outStream->index;
+      break;
+    }
+  }
+  
+  // Add audio stream to output
+  for (unsigned int i = 0; i < audioInputCtx->nb_streams; i++) {
+    if (audioInputCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      AVStream* outStream = avformat_new_stream(outputCtx, nullptr);
+      avcodec_parameters_copy(outStream->codecpar, audioInputCtx->streams[i]->codecpar);
+      outStream->codecpar->codec_tag = 0;
+      
+      // Explicitly set channel layout for MP4 compatibility
+      if (outStream->codecpar->ch_layout.nb_channels == 2) {
+        av_channel_layout_default(&outStream->codecpar->ch_layout, 2); // Stereo
+        std::cout << "[MUXING] Set audio to stereo channel layout" << std::endl;
+      } else if (outStream->codecpar->ch_layout.nb_channels == 1) {
+        av_channel_layout_default(&outStream->codecpar->ch_layout, 1); // Mono
+        std::cout << "[MUXING] Set audio to mono channel layout" << std::endl;
+      }
+      
+      outStream->time_base = audioInputCtx->streams[i]->time_base;
+      audioStreamIdx = i;
+      streamMapping[1] = outStream->index;
+      break;
+    }
+  }
+  
+  // Open output file
+  if (!(outputCtx->oformat->flags & AVFMT_NOFILE)) {
+    ret = avio_open(&outputCtx->pb, tempFilename.c_str(), AVIO_FLAG_WRITE);
+    if (ret < 0) {
+      appLog("[FFMPEG] Could not open output file", true);
+      avformat_free_context(outputCtx);
+      avformat_close_input(&videoInputCtx);
+      avformat_close_input(&audioInputCtx);
+      return false;
+    }
+  }
+  
+  // Write header
+  ret = avformat_write_header(outputCtx, nullptr);
+  if (ret < 0) {
+    appLog("[FFMPEG] Failed to write header", true);
+    avio_closep(&outputCtx->pb);
+    avformat_free_context(outputCtx);
+    avformat_close_input(&videoInputCtx);
+    avformat_close_input(&audioInputCtx);
+    return false;
+  }
+  
+  // Get video duration in seconds
+  double videoDuration = (double)videoInputCtx->streams[videoStreamIdx]->duration * 
+                         av_q2d(videoInputCtx->streams[videoStreamIdx]->time_base);
+  if (videoDuration <= 0) {
+    // Try to get duration from format context
+    videoDuration = (double)videoInputCtx->duration / AV_TIME_BASE;
+  }
+  std::cout << "[MUXING] Video duration: " << videoDuration << " seconds" << std::endl;
+  
+  // Interleave packets based on timestamps
+  AVPacket* pkt = av_packet_alloc();
+  bool videoEOF = false;
+  bool audioEOF = false;
+  
+  while (!videoEOF || !audioEOF) {
+    // Determine which stream to read from based on timestamps
+    bool readVideo = false;
+    
+    if (!videoEOF && !audioEOF) {
+      // Both streams available - read based on timestamps
+      int64_t videoPTS = videoEOF ? INT64_MAX : 0;
+      int64_t audioPTS = audioEOF ? INT64_MAX : 0;
+      
+      // Compare timestamps to decide which to read
+      readVideo = (videoPTS <= audioPTS);
+    } else {
+      readVideo = !videoEOF;
+    }
+    
+    if (readVideo && !videoEOF) {
+      ret = av_read_frame(videoInputCtx, pkt);
+      if (ret < 0) {
+        videoEOF = true;
+        continue;
+      }
+      
+      if (pkt->stream_index == videoStreamIdx) {
+        pkt->stream_index = streamMapping[0];
+        av_packet_rescale_ts(pkt, videoInputCtx->streams[videoStreamIdx]->time_base,
+                            outputCtx->streams[streamMapping[0]]->time_base);
+        pkt->pos = -1;
+        av_interleaved_write_frame(outputCtx, pkt);
+      }
+      av_packet_unref(pkt);
+    } else if (!audioEOF) {
+      ret = av_read_frame(audioInputCtx, pkt);
+      if (ret < 0) {
+        audioEOF = true;
+        continue;
+      }
+      
+      if (pkt->stream_index == audioStreamIdx) {
+        // Calculate audio packet timestamp in seconds
+        double audioPTS_sec = (double)pkt->pts * av_q2d(audioInputCtx->streams[audioStreamIdx]->time_base);
+        
+        // Only write audio packets that fall within video duration
+        if (audioPTS_sec <= videoDuration) {
+          pkt->stream_index = streamMapping[1];
+          av_packet_rescale_ts(pkt, audioInputCtx->streams[audioStreamIdx]->time_base,
+                              outputCtx->streams[streamMapping[1]]->time_base);
+          pkt->pos = -1;
+          av_interleaved_write_frame(outputCtx, pkt);
+        } else {
+          // Audio packet is beyond video duration - stop reading audio
+          std::cout << "[MUXING] Audio trimmed at " << audioPTS_sec << "s (video ends at " << videoDuration << "s)" << std::endl;
+          audioEOF = true;
+        }
+      }
+      av_packet_unref(pkt);
+    }
+  }
+  
+  // Write trailer and cleanup
+  av_write_trailer(outputCtx);
+  av_packet_free(&pkt);
+  avio_closep(&outputCtx->pb);
+  avformat_free_context(outputCtx);
+  avformat_close_input(&videoInputCtx);
+  avformat_close_input(&audioInputCtx);
+  
+  // Replace original file
+  std::cout << "[MUXING] Replacing original file with muxed version..." << std::endl;
+  if (std::remove(filename.c_str()) != 0 || std::rename(tempFilename.c_str(), filename.c_str()) != 0) {
+    std::cerr << "[MUXING ERROR] Could not replace video file" << std::endl;
+    appLog("[FFMPEG] Could not replace file", true);
+    std::remove(tempFilename.c_str());
+    return false;
+  }
+  
+  std::cout << "[MUXING] ✓ Audio muxing complete!" << std::endl;
+  appLog("[FFMPEG] Audio muxing complete using vcpkg libraries!");
+  return true;
 }
 

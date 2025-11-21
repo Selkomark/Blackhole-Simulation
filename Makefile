@@ -7,7 +7,8 @@ OBJC_FLAGS := -fobjc-arc
 VCPKG_INSTALLED := ./vcpkg_installed/arm64-osx
 INCLUDES := -I$(VCPKG_INSTALLED)/include
 LDFLAGS := -L$(VCPKG_INSTALLED)/lib
-LIBS := -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon \
+LIBS := -lSDL2 -lSDL2_ttf -lSDL2_mixer -lvorbisfile -lvorbis -logg -lwavpack \
+        -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon \
         -lavcodec -lavformat -lavutil -lswscale -lswresample -lavfilter -lavdevice
 RPATH := -Wl,-rpath,$(VCPKG_INSTALLED)/lib
 

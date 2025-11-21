@@ -40,7 +40,7 @@ std::string formatResolution(int width, int height, ResolutionManager* resolutio
   return std::to_string(width) + "×" + std::to_string(height);
 }
 
-void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, ResolutionManager* resolutionManager, int colorMode, float colorIntensity) {
+void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, ResolutionManager* resolutionManager, int colorMode, float colorIntensity, bool isMusicMuted) {
   if (!showHints || !font)
     return;
 
@@ -82,6 +82,7 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
     {"Enter/Esc/Q", "Stop Recording", false, false},
     {"", "", true, false}, // Separator
     {"F", "Fullscreen", false, false},
+    {"M", "Music: " + std::string(isMusicMuted ? "Muted" : "Playing"), false, false},
     {"Tab", "Toggle Help", false, false},
     {"", "", true, false}, // Separator
     {"ESC/Q", "Quit", false, false},
@@ -237,6 +238,43 @@ void HUD::renderText(const char *text, int x, int y, SDL_Color color) {
     
   SDL_Surface *surface = TTF_RenderText_Blended(font, text, color);
   if (surface) {
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (texture) {
+      SDL_Rect destRect = {x, y, surface->w, surface->h};
+      SDL_RenderCopy(renderer, texture, nullptr, &destRect);
+      SDL_DestroyTexture(texture);
+    }
+    SDL_FreeSurface(surface);
+  }
+}
+
+void HUD::renderMusicCredits(bool isMusicMuted, int windowWidth, int windowHeight) {
+  // Suppress unused parameter warnings
+  (void)windowWidth;
+  (void)windowHeight;
+  
+  // Don't show credits if music is muted
+  if (isMusicMuted || !font)
+    return;
+  
+  // Get actual renderer output size (accounts for high DPI)
+  int rendererWidth, rendererHeight;
+  SDL_GetRendererOutputSize(renderer, &rendererWidth, &rendererHeight);
+  
+  // Music credit text
+  const char* creditText = "'Interstellar Theme' - Hans Zimmer. Performed by Blackavec.";
+  
+  // Semi-transparent white/gray color
+  SDL_Color creditColor = {200, 200, 200, 255};
+  
+  // Render the text surface to get dimensions
+  SDL_Surface *surface = TTF_RenderText_Blended(font, creditText, creditColor);
+  if (surface) {
+    // Position at bottom-right corner with padding
+    int padding = 20;
+    int x = rendererWidth - surface->w - padding;
+    int y = rendererHeight - surface->h - padding;
+    
     SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
     if (texture) {
       SDL_Rect destRect = {x, y, surface->w, surface->h};

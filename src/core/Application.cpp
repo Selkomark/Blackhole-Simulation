@@ -8,18 +8,20 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 // External logging function from main.cpp
 extern void appLog(const std::string& message, bool isError = false);
 
 Application::Application()
-    : window(nullptr), sdlRenderer(nullptr), font(nullptr),
+    : window(nullptr), sdlRenderer(nullptr), font(nullptr), backgroundMusic(nullptr),
       gpuRenderer(nullptr), gpuTexture(nullptr),
       blackHole(nullptr), camera(nullptr), cinematicCamera(nullptr), hud(nullptr),
       resolutionManager(nullptr), videoRecorder(nullptr),
       windowWidth(1920), windowHeight(1080), renderWidth(1920), renderHeight(1080),
       isFullscreen(false), isResizing(false),
-      running(false), currentFPS(0), isRecording(false), colorMode(0), colorIntensity(1.0f) {}
+      running(false), currentFPS(0), isRecording(false), colorMode(0), colorIntensity(1.0f), 
+      isMusicMuted(false), currentMusicVolume(1.0f), targetMusicVolume(1.0f), isMusicFading(false) {}
 
 Application::~Application() {
   cleanup();
@@ -56,6 +58,15 @@ bool Application::initialize() {
     return false;
   }
   std::cerr << "[OK] SDL_ttf initialized successfully" << std::endl;
+
+  // Initialize SDL_mixer for audio
+  std::cerr << "[INIT] Initializing SDL_mixer..." << std::endl;
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+    std::cerr << "[WARNING] SDL_mixer could not initialize! Mix_Error: " << Mix_GetError() << std::endl;
+    std::cerr << "[WARNING] Continuing without audio..." << std::endl;
+  } else {
+    std::cerr << "[OK] SDL_mixer initialized successfully" << std::endl;
+  }
 
   // Create window (resizable)
   std::cerr << "[INIT] Creating window (" << windowWidth << "x" << windowHeight << ")..." << std::endl;
@@ -136,6 +147,22 @@ bool Application::initialize() {
   camera->lookAt(Vector3(0, 0, 0));
   hud = new HUD(sdlRenderer, font);
   videoRecorder = new VideoRecorder();
+
+  // Load and play background music
+  std::cerr << "[INIT] Loading background music..." << std::endl;
+  backgroundMusic = Mix_LoadMUS("assets/interstellar-ambient-music_background-music.wav");
+  if (!backgroundMusic) {
+    std::cerr << "[WARNING] Failed to load background music: " << Mix_GetError() << std::endl;
+    std::cerr << "[WARNING] Continuing without music..." << std::endl;
+  } else {
+    std::cerr << "[OK] Background music loaded successfully" << std::endl;
+    // Play music on infinite loop (-1 = loop forever)
+    if (Mix_PlayMusic(backgroundMusic, -1) < 0) {
+      std::cerr << "[WARNING] Failed to play background music: " << Mix_GetError() << std::endl;
+    } else {
+      std::cerr << "[OK] Background music playing" << std::endl;
+    }
+  }
 
   running = true;
   std::cerr << "Application initialization complete, entering main loop" << std::endl;
@@ -281,6 +308,23 @@ void Application::handleEvents() {
           updateWindowTitle();
           break;
         
+        case SDLK_m:
+          // Toggle music mute/unmute with smooth fade
+          if (backgroundMusic) {
+            isMusicMuted = !isMusicMuted;
+            isMusicFading = true;
+            if (isMusicMuted) {
+              targetMusicVolume = 0.0f; // Fade to silence
+              std::cout << "Music fading out..." << std::endl;
+              appLog("[AUDIO] Music fading out");
+            } else {
+              targetMusicVolume = 1.0f; // Fade to full volume
+              std::cout << "Music fading in..." << std::endl;
+              appLog("[AUDIO] Music fading in");
+            }
+          }
+          break;
+        
         case SDLK_b:
           // Changed cinematic camera to 'b' key (was 'c')
           cinematicCamera->cycleMode();
@@ -333,6 +377,36 @@ void Application::update(double deltaTime) {
   // Update camera - this must happen every frame
   // Even in manual mode with no input, camera look direction needs updating
   cinematicCamera->update(deltaTime, keyStates);
+  
+  // Update music volume fade
+  if (isMusicFading && backgroundMusic) {
+    const float fadeSpeed = 2.0f; // Volume units per second (0.0 to 1.0 range)
+    float volumeChange = fadeSpeed * static_cast<float>(deltaTime);
+    
+    // Move current volume towards target
+    if (currentMusicVolume < targetMusicVolume) {
+      currentMusicVolume = std::min(currentMusicVolume + volumeChange, targetMusicVolume);
+    } else if (currentMusicVolume > targetMusicVolume) {
+      currentMusicVolume = std::max(currentMusicVolume - volumeChange, targetMusicVolume);
+    }
+    
+    // Update SDL mixer volume (0-128 range)
+    int sdlVolume = static_cast<int>(currentMusicVolume * MIX_MAX_VOLUME);
+    Mix_VolumeMusic(sdlVolume);
+    
+    // Stop fading when target reached
+    if (std::abs(currentMusicVolume - targetMusicVolume) < 0.01f) {
+      currentMusicVolume = targetMusicVolume;
+      isMusicFading = false;
+      
+      // Log completion
+      if (isMusicMuted) {
+        appLog("[AUDIO] Fade out complete");
+      } else {
+        appLog("[AUDIO] Fade in complete");
+      }
+    }
+  }
 }
 
 void Application::render(double elapsedTime) {
@@ -352,11 +426,6 @@ void Application::render(double elapsedTime) {
   
   metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime, colorMode, colorIntensity);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
-  
-  // Capture frame for video recording if recording (before texture update)
-  if (isRecording && videoRecorder && pixels) {
-    videoRecorder->addFrame(pixels, renderWidth, renderHeight);
-  }
   
   if (pixels && gpuTexture) {
     // Always update texture - force update even if pixels appear unchanged
@@ -428,7 +497,32 @@ void Application::render(double elapsedTime) {
   
   // Render HUD (hide hints if recording)
   bool showHints = hud->areHintsVisible() && !isRecording;
-  hud->renderHints(showHints, cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager, colorMode, colorIntensity);
+  hud->renderHints(showHints, cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager, colorMode, colorIntensity, isMusicMuted);
+  
+  // Render music credits (always visible when music is playing, even during recording)
+  hud->renderMusicCredits(isMusicMuted, windowWidth, windowHeight);
+
+  // Capture frame for video recording AFTER HUD is rendered (to include overlays)
+  if (isRecording && videoRecorder) {
+    // Get actual renderer output size (may differ from render resolution due to high DPI)
+    int outputW, outputH;
+    SDL_GetRendererOutputSize(sdlRenderer, &outputW, &outputH);
+    
+    // Allocate buffer for pixel data
+    std::vector<uint8_t> pixelBuffer(outputW * outputH * 4);
+    
+    // Read pixels from renderer (includes HUD overlay)
+    if (SDL_RenderReadPixels(sdlRenderer, nullptr, SDL_PIXELFORMAT_ARGB8888, 
+                             pixelBuffer.data(), outputW * 4) == 0) {
+      // Pass the actual captured size to the video recorder
+      videoRecorder->addFrame(pixelBuffer.data(), outputW, outputH);
+    } else {
+      static int readErrorCount = 0;
+      if (readErrorCount++ < 3) {
+        std::cerr << "Warning: Failed to read pixels for recording: " << SDL_GetError() << std::endl;
+      }
+    }
+  }
 
   // Always present - this must happen every frame
   // Force presentation even if SDL thinks nothing changed
@@ -670,20 +764,43 @@ void Application::startRecording() {
   std::string filename = std::string("/tmp/") + filenameBase;
   
   int fps = currentFPS > 0 ? currentFPS : 60;
+  // Get actual renderer output size for recording (includes high DPI scaling)
+  int recordWidth, recordHeight;
+  SDL_GetRendererOutputSize(sdlRenderer, &recordWidth, &recordHeight);
+  
   std::ostringstream logMsg;
   logMsg << "[RECORDING] Attempting to start recording: " << filename 
-         << " (" << renderWidth << "×" << renderHeight << "@" << fps << "fps)";
+         << " (" << recordWidth << "×" << recordHeight << "@" << fps << "fps)";
   appLog(logMsg.str());
   std::cout << "Attempting to start recording: " << filename 
-            << " (" << renderWidth << "×" << renderHeight << "@" << fps << "fps)" << std::endl;
+            << " (" << recordWidth << "×" << recordHeight << "@" << fps << "fps)" << std::endl;
   
-  if (videoRecorder->startRecording(filename, renderWidth, renderHeight, fps)) {
+  // Pass audio file path if music is available and not muted
+  std::string audioFile = "";
+  if (backgroundMusic && !isMusicMuted) {
+    audioFile = "assets/interstellar-ambient-music_background-music.wav";
+    std::cout << "Recording will include audio from: " << audioFile << std::endl;
+    appLog("[RECORDING] Audio will be included in recording");
+  } else {
+    if (!backgroundMusic) {
+      std::cout << "Recording WITHOUT audio: no background music loaded" << std::endl;
+      appLog("[RECORDING] No background music loaded");
+    } else if (isMusicMuted) {
+      std::cout << "Recording WITHOUT audio: music is muted" << std::endl;
+      appLog("[RECORDING] Music is muted - no audio in recording");
+    }
+  }
+  
+  if (videoRecorder->startRecording(filename, recordWidth, recordHeight, fps, audioFile)) {
     isRecording = true;
     updateWindowTitle();
     logMsg.str("");
-    logMsg << "[RECORDING] ✓ Recording started successfully at " << renderWidth << "×" << renderHeight;
+    logMsg << "[RECORDING] ✓ Recording started successfully at " << recordWidth << "×" << recordHeight;
+    if (!audioFile.empty()) {
+      logMsg << " with audio";
+    }
     appLog(logMsg.str());
-    std::cout << "✓ Recording started successfully at " << renderWidth << "×" << renderHeight << std::endl;
+    std::cout << "✓ Recording started successfully at " << recordWidth << "×" << recordHeight << std::endl;
   } else {
     std::ostringstream errMsg;
     errMsg << "[RECORDING] ✗ Failed to start recording! Check console for FFmpeg errors.";
@@ -767,6 +884,13 @@ void Application::cleanup() {
   delete cinematicCamera;
   delete camera;
   delete blackHole;
+  
+  // Cleanup audio
+  if (backgroundMusic) {
+    Mix_FreeMusic(backgroundMusic);
+    backgroundMusic = nullptr;
+  }
+  Mix_CloseAudio();
   
   TTF_Quit();
   SDL_Quit();

@@ -2,6 +2,7 @@
   "dependencies": [
     "sdl2",
     "sdl2-ttf",
+    "sdl2-mixer",
     "ffmpeg"
   ],
   "builtin-baseline": "45e834acc02adc82828712895c2ccd82cd412011"

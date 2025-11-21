@@ -4,8 +4,8 @@
 #include <string>
 #include <cstdlib>
 #include <sstream>
-#include <iomanip>
 #include <ctime>
+#include <cstring>
 
 // Global log file stream (for Application to use)
 std::ofstream* g_logFile = nullptr;
@@ -30,13 +30,13 @@ std::string getLogPath(const std::string& xrayId = "") {
 
 // Logging helper that writes to both console and log file
 void logMessage(const std::string& message, bool isError = false) {
-    // Get timestamp
+    // Get timestamp using strftime (safer than std::put_time on macOS)
     auto now = std::time(nullptr);
     auto tm = *std::localtime(&now);
-    std::ostringstream timestamp;
-    timestamp << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+    char timestamp[32];
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm);
     
-    std::string logLine = "[" + timestamp.str() + "] " + message;
+    std::string logLine = "[" + std::string(timestamp) + "] " + message;
     
     // Write to console
     if (isError) {

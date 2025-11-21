@@ -2,6 +2,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_mixer.h>
 #include "../camera/Camera.hpp"
 #include "../camera/CinematicCamera.hpp"
 #include "../ui/HUD.hpp"
@@ -29,6 +30,7 @@ private:
   SDL_Window *window;
   SDL_Renderer *sdlRenderer;
   TTF_Font *font;
+  Mix_Music *backgroundMusic;
   
   // Rendering
   MetalRTRenderer *gpuRenderer;
@@ -56,6 +58,10 @@ private:
   bool isRecording;
   int colorMode; // 0=blue, 1=orange, 2=red
   float colorIntensity; // Brightness multiplier for accretion disk (default 1.0)
+  bool isMusicMuted; // Music mute state
+  float currentMusicVolume; // Current music volume (0.0 to 1.0)
+  float targetMusicVolume; // Target music volume for fading
+  bool isMusicFading; // Whether music is currently fading
   
   // Private methods
   void handleEvents();
