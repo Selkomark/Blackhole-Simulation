@@ -2,6 +2,12 @@
 
 A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tracing and accurate physics equations. Features gravitational lensing, volumetric accretion disk rendering, and cinematic camera movements.
 
+<p align="center">
+  <img src="assets/demo/demo_blackhole_screenshot.png" alt="Black Hole Simulation Demo" width="800">
+  <br>
+  <em><a href="assets/demo/demo_blackhole_recording.mp4">🎥 Watch Exported Video Demo</a></em>
+</p>
+
 ![Black Hole Simulation](https://img.shields.io/badge/C%2B%2B-20-blue) ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey) ![GPU](https://img.shields.io/badge/Metal-GPU-orange)
 
 ## Features

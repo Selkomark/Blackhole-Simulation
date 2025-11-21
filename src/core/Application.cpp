@@ -1,6 +1,7 @@
 #include "../../include/core/Application.hpp"
 #include "../../include/utils/SaveDialog.h"
 #include "../../include/utils/IconLoader.h"
+#include "../../include/utils/Screenshot.h"
 #include <iostream>
 #include <chrono>
 #include <string>
@@ -9,6 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <cstring>
 
 // External logging function from main.cpp
 extern void appLog(const std::string& message, bool isError = false);
@@ -21,7 +23,8 @@ Application::Application()
       windowWidth(1920), windowHeight(1080), renderWidth(1920), renderHeight(1080),
       isFullscreen(false), isResizing(false),
       running(false), currentFPS(0), isRecording(false), colorMode(0), colorIntensity(1.0f), 
-      isMusicMuted(false), currentMusicVolume(1.0f), targetMusicVolume(1.0f), isMusicFading(false) {}
+      isMusicMuted(false), currentMusicVolume(1.0f), targetMusicVolume(1.0f), isMusicFading(false),
+      currentElapsedTime(0.0) {}
 
 Application::~Application() {
   cleanup();
@@ -197,6 +200,9 @@ void Application::run() {
         elapsedTime = lastElapsedTime + deltaTime;
     }
     lastElapsedTime = elapsedTime;
+    
+    // Store elapsed time for screenshot capture
+    currentElapsedTime = elapsedTime;
 
     // Always process events (non-blocking)
     handleEvents();
@@ -256,6 +262,11 @@ void Application::handleEvents() {
         break;
       }
       
+      if (e.key.keysym.sym == SDLK_s && isCommandPressed) {
+        takeScreenshot();
+        break;
+      }
+      
       // When recording, Esc and Q should stop recording instead of quitting
       if (isRecording) {
         if (e.key.keysym.sym == SDLK_ESCAPE || e.key.keysym.sym == SDLK_q) {
@@ -296,10 +307,10 @@ void Application::handleEvents() {
           // Hints toggle logging removed
           break;
         case SDLK_c:
-          // Cycle color palette: Blue -> Orange -> Red -> Blue
-          colorMode = (colorMode + 1) % 3;
+          // Cycle color palette: Blue -> Orange -> Red -> White -> Blue
+          colorMode = (colorMode + 1) % 4;
           {
-            const char* colorNames[] = {"Blue", "Orange", "Red"};
+            const char* colorNames[] = {"Blue", "Orange", "Red", "White"};
             std::ostringstream logMsg;
             logMsg << "[COLOR] Switched to " << colorNames[colorMode] << " palette";
             appLog(logMsg.str());
@@ -325,8 +336,8 @@ void Application::handleEvents() {
           }
           break;
         
-        case SDLK_b:
-          // Changed cinematic camera to 'b' key (was 'c')
+        case SDLK_t:
+          // Changed cinematic camera to 't' key (was 'b')
           cinematicCamera->cycleMode();
           updateWindowTitle();
           break;
@@ -424,6 +435,7 @@ void Application::render(double elapsedTime) {
   
   // Debug logging removed for performance
   
+  // Render with current color mode
   metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime, colorMode, colorIntensity);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
   
@@ -858,6 +870,101 @@ void Application::stopRecording() {
     logMsg << "[RECORDING] User cancelled save dialog. Recording saved to: " << tempFilename;
     appLog(logMsg.str());
     std::cout << "Recording saved to: " << tempFilename << std::endl;
+  }
+}
+
+void Application::takeScreenshot() {
+  if (!gpuRenderer || !camera) {
+    appLog("[SCREENSHOT] Cannot take screenshot: renderer or camera not initialized", true);
+    return;
+  }
+  
+  // Prepare camera data for GPU
+  CameraData gpuCam;
+  prepareCameraData(gpuCam);
+  
+  // Use the current elapsed time from the main render loop
+  // This ensures consistency with what's being displayed
+  float renderTime = static_cast<float>(currentElapsedTime);
+  
+  // Use render resolution (the actual rendered scene resolution)
+  // This is the native resolution of the GPU renderer, without any scaling
+  int screenshotWidth = renderWidth;
+  int screenshotHeight = renderHeight;
+  
+  // CRITICAL DEBUG: Verify colorMode value
+  std::cout << "========== SCREENSHOT START ==========" << std::endl;
+  std::cout << "Application::colorMode = " << colorMode << std::endl;
+  
+  // Log the color mode being used for debugging
+  {
+    const char* colorNames[] = {"Blue", "Orange", "Red", "White"};
+    std::ostringstream logMsg;
+    logMsg << "[SCREENSHOT] Capturing with color mode: " << colorMode << " (" << colorNames[colorMode % 4] << ")";
+    appLog(logMsg.str());
+    std::cout << "[SCREENSHOT] colorMode=" << colorMode << ", colorIntensity=" << colorIntensity << std::endl;
+  }
+  
+  // Store in local variable to ensure it doesn't get modified
+  int screenshotColorMode = colorMode;
+  std::cout << "[SCREENSHOT] Passing screenshotColorMode=" << screenshotColorMode << " to render_and_get_pixels" << std::endl;
+  
+  // Use the atomic render-and-get function which reads directly from texture
+  const void *gpuPixels = metal_rt_renderer_render_and_get_pixels(gpuRenderer, &gpuCam, renderTime, screenshotColorMode, colorIntensity);
+  std::cout << "[SCREENSHOT] Got pixels back from render_and_get_pixels" << std::endl;
+  std::cout << "========== SCREENSHOT END ==========" << std::endl;
+  
+  if (!gpuPixels) {
+    appLog("[SCREENSHOT] render_and_get_pixels returned nullptr!", true);
+    std::cerr << "Failed to get pixels from render_and_get_pixels" << std::endl;
+    return;
+  }
+  
+  // Debug: Sample a few pixels to verify color (check top-left corner for debug square)
+  if (screenshotWidth > 0 && screenshotHeight > 0) {
+    // Check top-left corner (should be colored square)
+    // gpuPixels is in BGRA format: [B, G, R, A]
+    const uint8_t* cornerPixel = static_cast<const uint8_t*>(gpuPixels);
+    std::cout << "[SCREENSHOT] Top-left corner pixel BGRA format: B=" << (int)cornerPixel[0] << " G=" << (int)cornerPixel[1] << " R=" << (int)cornerPixel[2] << " A=" << (int)cornerPixel[3] << std::endl;
+    
+    // Check center pixel
+    int centerX = screenshotWidth / 2;
+    int centerY = screenshotHeight / 2;
+    int centerIdx = (centerY * screenshotWidth + centerX) * 4;
+    const uint8_t* centerPixel = static_cast<const uint8_t*>(gpuPixels) + centerIdx;
+    std::cout << "[SCREENSHOT] Center pixel BGRA format: B=" << (int)centerPixel[0] << " G=" << (int)centerPixel[1] << " R=" << (int)centerPixel[2] << " A=" << (int)centerPixel[3] << std::endl;
+  }
+  
+  // Copy GPU pixels to buffer (GPU pixels are already in ARGB8888 format)
+  std::vector<uint8_t> pixelBuffer(screenshotWidth * screenshotHeight * 4);
+  std::memcpy(pixelBuffer.data(), gpuPixels, screenshotWidth * screenshotHeight * 4);
+  
+  // Generate default filename with timestamp
+  std::time_t now = std::time(nullptr);
+  std::tm* tm = std::localtime(&now);
+  char filenameBase[256];
+  std::snprintf(filenameBase, sizeof(filenameBase), "blackhole_screenshot_%04d%02d%02d_%02d%02d%02d.png",
+                tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                tm->tm_hour, tm->tm_min, tm->tm_sec);
+  
+  // Show save dialog
+  std::string savePath = showSaveDialogPNG(filenameBase);
+  
+  if (!savePath.empty()) {
+    // Save PNG file
+    if (savePNG(pixelBuffer.data(), screenshotWidth, screenshotHeight, savePath)) {
+      std::ostringstream logMsg;
+      logMsg << "[SCREENSHOT] Screenshot saved to: " << savePath << " (" << screenshotWidth << "×" << screenshotHeight << ")";
+      appLog(logMsg.str());
+      std::cout << "Screenshot saved to: " << savePath << std::endl;
+    } else {
+      std::ostringstream errMsg;
+      errMsg << "[SCREENSHOT] Failed to save screenshot to: " << savePath;
+      appLog(errMsg.str(), true);
+      std::cerr << "Failed to save screenshot!" << std::endl;
+    }
+  } else {
+    appLog("[SCREENSHOT] User cancelled save dialog");
   }
 }
 

@@ -27,7 +27,7 @@ struct Uniforms {
     Camera camera;
     uint2 resolution;
     float time;
-    int colorMode; // 0=blue, 1=orange, 2=red
+    int colorMode; // 0=blue, 1=orange, 2=red, 3=white
     float colorIntensity; // Brightness multiplier for accretion disk
 };
 
@@ -150,13 +150,20 @@ float3 disk_color(float density, float r, float3 pos, float3 ray_dir, int colorM
         cold = float3(0.9, 0.6, 0.4);        // Outer: Dim orange
         doppler_bright = float3(1.0, 0.95, 0.85);
         doppler_dim = float3(0.8, 0.5, 0.3);
-    } else {
+    } else if (colorMode == 2) {
         // Red mode - Hot red plasma
         hot = float3(1.0, 0.85, 0.75);       // Inner: Bright red-white
         mid = float3(1.0, 0.6, 0.5);         // Mid: Red-orange
         cold = float3(0.85, 0.4, 0.3);       // Outer: Deep red
         doppler_bright = float3(1.0, 0.9, 0.85);
         doppler_dim = float3(0.7, 0.3, 0.2);
+    } else {
+        // White mode - Pure white/grayscale
+        hot = float3(1.0, 1.0, 1.0);         // Inner: Pure white
+        mid = float3(0.9, 0.9, 0.9);         // Mid: Light gray-white
+        cold = float3(0.7, 0.7, 0.7);        // Outer: Medium gray
+        doppler_bright = float3(1.0, 1.0, 1.0);
+        doppler_dim = float3(0.6, 0.6, 0.6);
     }
     
     // Blend between hot, mid, and cold

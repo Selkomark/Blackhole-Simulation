@@ -56,12 +56,13 @@ private:
   bool running;
   int currentFPS;
   bool isRecording;
-  int colorMode; // 0=blue, 1=orange, 2=red
+  int colorMode; // 0=blue, 1=orange, 2=red, 3=white
   float colorIntensity; // Brightness multiplier for accretion disk (default 1.0)
   bool isMusicMuted; // Music mute state
   float currentMusicVolume; // Current music volume (0.0 to 1.0)
   float targetMusicVolume; // Target music volume for fading
   bool isMusicFading; // Whether music is currently fading
+  double currentElapsedTime; // Current elapsed time for rendering (updated each frame)
   
   // Private methods
   void handleEvents();
@@ -77,6 +78,9 @@ private:
   // Video recording
   void startRecording();
   void stopRecording();
+  
+  // Screenshot
+  void takeScreenshot();
   
   // Helper to convert camera data for GPU
   void prepareCameraData(CameraData &data);

@@ -48,8 +48,8 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
   std::string resolutionStr = formatResolution(windowWidth, windowHeight, resolutionManager);
   
   // Color mode names
-  const char* colorNames[] = {"Blue", "Orange", "Red"};
-  std::string colorModeStr = colorNames[colorMode % 3];
+  const char* colorNames[] = {"Blue", "Orange", "Red", "White"};
+  std::string colorModeStr = colorNames[colorMode % 4];
   
   // Format intensity
   std::ostringstream intensityStream;
@@ -73,7 +73,7 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
     {"A/D", "Zoom In/Out", false, false},
     {"", "", true, false}, // Separator
     {"R", "Reset Camera", false, false},
-    {"B", "Camera: " + std::string(getCinematicModeName(mode)), false, false},
+    {"T", "Camera: " + std::string(getCinematicModeName(mode)), false, false},
     {"C", "Color: " + colorModeStr, false, false},
     {"+/-", "Change Resolution", false, false},
     {"Shift +/-", "Intensity: " + intensityStr, false, false},

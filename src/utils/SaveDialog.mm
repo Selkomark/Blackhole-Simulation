@@ -37,3 +37,38 @@ std::string showSaveDialog(const std::string& defaultFilename) {
     }
 }
 
+// Show macOS save dialog for PNG images
+std::string showSaveDialogPNG(const std::string& defaultFilename) {
+    @autoreleasepool {
+        NSSavePanel *savePanel = [NSSavePanel savePanel];
+        
+        // Set default filename
+        NSString *defaultName = [NSString stringWithUTF8String:defaultFilename.c_str()];
+        [savePanel setNameFieldStringValue:defaultName];
+        
+        // Set allowed file types (using deprecated API for compatibility)
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        [savePanel setAllowedFileTypes:@[@"png"]];
+        #pragma clang diagnostic pop
+        [savePanel setAllowsOtherFileTypes:NO];
+        
+        // Set title
+        [savePanel setTitle:@"Save Screenshot"];
+        [savePanel setMessage:@"Choose where to save your screenshot:"];
+        
+        // Show dialog
+        NSInteger result = [savePanel runModal];
+        
+        if (result == NSModalResponseOK) {
+            NSURL *url = [savePanel URL];
+            if (url) {
+                const char *path = [[url path] UTF8String];
+                return std::string(path);
+            }
+        }
+        
+        return std::string(); // Cancelled or error
+    }
+}
+
