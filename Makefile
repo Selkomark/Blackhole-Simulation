@@ -4,7 +4,7 @@ CXXFLAGS := -std=c++20 -O3 -Wall -Wextra
 OBJC_FLAGS := -fobjc-arc
 
 # vcpkg configuration
-VCPKG_INSTALLED := ./vcpkg/installed/arm64-osx
+VCPKG_INSTALLED := ./vcpkg_installed/arm64-osx
 INCLUDES := -I$(VCPKG_INSTALLED)/include
 LDFLAGS := -L$(VCPKG_INSTALLED)/lib
 LIBS := -lSDL2 -lSDL2_ttf -lfreetype -lpng16 -lbz2 -lz -lbrotlidec -lbrotlicommon \

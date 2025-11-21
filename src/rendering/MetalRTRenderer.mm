@@ -29,6 +29,8 @@ struct Uniforms {
   } camera;
   uint32_t resolution[2];
   float time;
+  int colorMode; // 0=blue, 1=orange, 2=red
+  float colorIntensity; // Brightness multiplier for accretion disk
 };
 
 MetalRTRenderer *metal_rt_renderer_create(int width, int height) {
@@ -177,7 +179,7 @@ void metal_rt_renderer_destroy(MetalRTRenderer *renderer) {
 }
 
 void metal_rt_renderer_render(MetalRTRenderer *renderer,
-                              const CameraData *camera, float time) {
+                              const CameraData *camera, float time, int colorMode, float colorIntensity) {
   @autoreleasepool {
     // Update uniforms
     Uniforms *uniforms = (Uniforms *)[renderer->uniformBuffer contents];
@@ -191,6 +193,8 @@ void metal_rt_renderer_render(MetalRTRenderer *renderer,
     // Always update time - this drives the black hole animation
     // Even if camera doesn't move, time must advance for animation
     uniforms->time = time;
+    uniforms->colorMode = colorMode;
+    uniforms->colorIntensity = colorIntensity;
     
     // Ensure time is valid (not NaN or Inf)
     if (!isfinite(uniforms->time)) {

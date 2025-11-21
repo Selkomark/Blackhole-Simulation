@@ -54,6 +54,8 @@ private:
   bool running;
   int currentFPS;
   bool isRecording;
+  int colorMode; // 0=blue, 1=orange, 2=red
+  float colorIntensity; // Brightness multiplier for accretion disk (default 1.0)
   
   // Private methods
   void handleEvents();

@@ -18,6 +18,7 @@ private:
 
   // Helper for accretion disk texture/noise
   double diskDensity(const Vector3 &pos) const;
-  Vector3 diskColor(double density, double r) const;
+  Vector3 diskColor(double density, double r, const Vector3 &pos, const Vector3 &rayDir, int colorMode = 0) const;
+  double dopplerFactor(const Vector3 &pos, const Vector3 &rayDir) const;
   Vector3 sampleBackground(const Vector3 &dir) const;
 };

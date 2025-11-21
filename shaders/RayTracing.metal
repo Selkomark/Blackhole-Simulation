@@ -27,6 +27,8 @@ struct Uniforms {
     Camera camera;
     uint2 resolution;
     float time;
+    int colorMode; // 0=blue, 1=orange, 2=red
+    float colorIntensity; // Brightness multiplier for accretion disk
 };
 
 // Vector math utilities
@@ -97,17 +99,65 @@ float disk_density(float3 pos, float time) {
     return noise * fade * exp(-abs(pos.y) * 10.0);
 }
 
-// Disk color based on temperature - White hot palette
-float3 disk_color(float density, float r) {
-    // Hot inner: Pure white
-    float3 hot = float3(1.0, 1.0, 1.0);      // Pure white
-    // Mid: Slightly warm white
-    float3 mid = float3(1.0, 0.95, 0.9);     // Warm white
-    // Cold outer: Dim white/gray
-    float3 cold = float3(0.7, 0.65, 0.6);    // Dim warm gray
+// Calculate Doppler beaming factor
+float doppler_factor(float3 pos, float3 ray_dir) {
+    float r = length(pos);
     
+    // Keplerian orbital velocity: v = sqrt(GM/r) = sqrt(RS/(2r)) in geometrized units
+    float v_orbital = sqrt(RS / (2.0 * r));
+    v_orbital = min(v_orbital, 0.5); // Cap at 0.5c for numerical stability
+    
+    // Disk rotates clockwise when viewed from above (positive y)
+    // This makes the left side approach the observer and the right side recede
+    // Velocity direction is tangent to orbit: perpendicular to radial direction in x-z plane
+    float3 radial_xz = normalize(float3(pos.x, 0.0, pos.z));
+    float3 velocity = float3(radial_xz.z, 0.0, -radial_xz.x) * v_orbital;
+    
+    // Doppler factor: δ = 1 / (γ(1 - β·n))
+    // where β = v/c, n is direction toward observer (opposite of ray direction)
+    float beta = v_orbital; // v/c (c = 1 in our units)
+    float gamma = 1.0 / sqrt(1.0 - beta * beta);
+    
+    // Component of velocity toward observer (negative of ray direction)
+    float beta_parallel = -dot(velocity, ray_dir);
+    
+    // Doppler factor
+    float delta = 1.0 / (gamma * (1.0 - beta_parallel));
+    
+    return delta;
+}
+
+// Disk color based on temperature with multiple color palettes and Doppler effects
+float3 disk_color(float density, float r, float3 pos, float3 ray_dir, int colorMode, float colorIntensity) {
     float t = (r - RS * 2.5) / (RS * 9.5);
     t = clamp(t, 0.0, 1.0);
+    
+    // Define color palettes for different modes
+    float3 hot, mid, cold;
+    float3 doppler_bright, doppler_dim;
+    
+    if (colorMode == 0) {
+        // Blue mode - Interstellar style with extra blue in inner region
+        hot = float3(0.7, 0.85, 1.0);        // Inner: More blue
+        mid = float3(0.75, 0.85, 1.0);       // Mid: Blue-white
+        cold = float3(0.5, 0.6, 0.8);        // Outer: Cooler blue
+        doppler_bright = float3(0.85, 0.92, 1.0);
+        doppler_dim = float3(0.5, 0.6, 0.8);
+    } else if (colorMode == 1) {
+        // Orange mode - Warm glowing plasma
+        hot = float3(1.0, 0.9, 0.7);         // Inner: Bright orange-white
+        mid = float3(1.0, 0.75, 0.5);        // Mid: Orange
+        cold = float3(0.9, 0.6, 0.4);        // Outer: Dim orange
+        doppler_bright = float3(1.0, 0.95, 0.85);
+        doppler_dim = float3(0.8, 0.5, 0.3);
+    } else {
+        // Red mode - Hot red plasma
+        hot = float3(1.0, 0.85, 0.75);       // Inner: Bright red-white
+        mid = float3(1.0, 0.6, 0.5);         // Mid: Red-orange
+        cold = float3(0.85, 0.4, 0.3);       // Outer: Deep red
+        doppler_bright = float3(1.0, 0.9, 0.85);
+        doppler_dim = float3(0.7, 0.3, 0.2);
+    }
     
     // Blend between hot, mid, and cold
     float3 base_color;
@@ -117,7 +167,25 @@ float3 disk_color(float density, float r) {
         base_color = mix(mid, cold, (t - 0.5) * 2.0);
     }
     
-    return base_color * density * 3.5;
+    // Apply Doppler beaming
+    float delta = doppler_factor(pos, ray_dir);
+    
+    // Intensity boost: I_observed = I_emitted * δ^3 (for emission)
+    float intensity_boost = pow(delta, 3.0);
+    
+    // Frequency shift affects color
+    float3 doppler_color = base_color;
+    if (delta > 1.0) {
+        // Approaching: shift toward brighter color
+        float shift = min((delta - 1.0) * 2.0, 0.4);
+        doppler_color = mix(base_color, doppler_bright, shift);
+    } else {
+        // Receding: shift toward dimmer color
+        float shift = min((1.0 - delta) * 2.0, 0.3);
+        doppler_color = mix(base_color, doppler_dim, shift);
+    }
+    
+    return doppler_color * density * 4.0 * intensity_boost * colorIntensity;
 }
 
 // Background starfield with time-based rotation
@@ -148,7 +216,7 @@ float3 sample_background(float3 dir, float time) {
 }
 
 // Full volumetric ray tracing
-float3 trace_ray(float3 origin, float3 direction, float time) {
+float3 trace_ray(float3 origin, float3 direction, float time, int colorMode, float colorIntensity) {
     float3 pos = origin;
     float3 vel = direction;
     
@@ -168,7 +236,7 @@ float3 trace_ray(float3 origin, float3 direction, float time) {
         float density = disk_density(pos, time);
         if (density > 0.001) {
             float r = sqrt(r2);
-            float3 emission = disk_color(density, r);
+            float3 emission = disk_color(density, r, pos, vel, colorMode, colorIntensity);
             float absorption = density * 0.5;
             
             // Beer's Law integration for this step
@@ -234,9 +302,9 @@ kernel void ray_generation(
     float3 up = float3(uniforms.camera.up);
     float3 dir = normalize(forward + right * px + up * py);
     
-    // Trace ray - pass time for animation
+    // Trace ray - pass time for animation, color mode, and intensity
     float3 origin = float3(uniforms.camera.position);
-    float3 color = trace_ray(origin, dir, uniforms.time);
+    float3 color = trace_ray(origin, dir, uniforms.time, uniforms.colorMode, uniforms.colorIntensity);
     
     // Check if color is valid (not NaN or Inf)
     if (isnan(color.x) || isnan(color.y) || isnan(color.z) ||

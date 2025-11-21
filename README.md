@@ -22,7 +22,7 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 
 - **macOS** with **Apple Silicon** (M1/M2/M3/M4) or Intel with Metal support
 - **Xcode Command Line Tools** (for clang++ and Metal compiler)
-- **vcpkg** (dependency manager - included in repository)
+- **vcpkg** (dependency manager - will be installed in step 2)
 
 > **⚠️ GPU Required**: This simulation requires Metal GPU acceleration and will not run without it.
 
@@ -36,19 +36,33 @@ git clone <your-repo-url> blackhole_simulation
 cd blackhole_simulation
 ```
 
-### 2. Install Dependencies
+### 2. Install vcpkg (Dependency Manager)
 
-The project uses vcpkg for dependency management. Dependencies are declared in `vcpkg.json`:
+The project uses vcpkg to manage dependencies (SDL2, SDL2_ttf, ffmpeg). First, clone vcpkg into the project directory:
 
 ```bash
-# Bootstrap vcpkg (if not already done)
-./vcpkg/bootstrap-vcpkg.sh
+# Clone vcpkg into the project
+git clone https://github.com/microsoft/vcpkg.git
 
-# Install all dependencies
+# Bootstrap vcpkg (builds the vcpkg executable)
+./vcpkg/bootstrap-vcpkg.sh
+```
+
+### 3. Install Dependencies
+
+Now install all required dependencies (declared in `vcpkg.json`):
+
+```bash
+# Install all dependencies (SDL2, SDL2_ttf, ffmpeg)
 ./vcpkg/vcpkg install
 ```
 
-### 3. Build the Project
+This will download and build:
+- **SDL2**: Window management and graphics
+- **SDL2_ttf**: Text rendering for HUD
+- **ffmpeg**: Video recording functionality
+
+### 4. Build the Project
 
 ```bash
 make

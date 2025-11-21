@@ -7,6 +7,7 @@
 #include <ctime>
 #include <algorithm>
 #include <sstream>
+#include <iomanip>
 
 // External logging function from main.cpp
 extern void appLog(const std::string& message, bool isError = false);
@@ -18,7 +19,7 @@ Application::Application()
       resolutionManager(nullptr), videoRecorder(nullptr),
       windowWidth(1920), windowHeight(1080), renderWidth(1920), renderHeight(1080),
       isFullscreen(false), isResizing(false),
-      running(false), currentFPS(0), isRecording(false) {}
+      running(false), currentFPS(0), isRecording(false), colorMode(0), colorIntensity(1.0f) {}
 
 Application::~Application() {
   cleanup();
@@ -268,17 +269,51 @@ void Application::handleEvents() {
           // Hints toggle logging removed
           break;
         case SDLK_c:
-          cinematicCamera->cycleMode();
-          // Mode change logging removed
+          // Cycle color palette: Blue -> Orange -> Red -> Blue
+          colorMode = (colorMode + 1) % 3;
+          {
+            const char* colorNames[] = {"Blue", "Orange", "Red"};
+            std::ostringstream logMsg;
+            logMsg << "[COLOR] Switched to " << colorNames[colorMode] << " palette";
+            appLog(logMsg.str());
+            std::cout << "Color mode: " << colorNames[colorMode] << std::endl;
+          }
           updateWindowTitle();
           break;
+        
+        case SDLK_b:
+          // Changed cinematic camera to 'b' key (was 'c')
+          cinematicCamera->cycleMode();
+          updateWindowTitle();
+          break;
+        
         case SDLK_PLUS:
         case SDLK_EQUALS:
-          changeResolution(true);
+          // Check if Shift is pressed
+          if (SDL_GetModState() & KMOD_SHIFT) {
+            // Increase intensity
+            colorIntensity = std::min(colorIntensity + 0.1f, 3.0f);
+            std::ostringstream logMsg;
+            logMsg << "[INTENSITY] Increased to " << std::fixed << std::setprecision(1) << colorIntensity;
+            appLog(logMsg.str());
+            std::cout << "Color intensity: " << colorIntensity << std::endl;
+          } else {
+            changeResolution(true);
+          }
           break;
         case SDLK_MINUS:
         case SDLK_UNDERSCORE:
-          changeResolution(false);
+          // Check if Shift is pressed
+          if (SDL_GetModState() & KMOD_SHIFT) {
+            // Decrease intensity
+            colorIntensity = std::max(colorIntensity - 0.1f, 0.1f);
+            std::ostringstream logMsg;
+            logMsg << "[INTENSITY] Decreased to " << std::fixed << std::setprecision(1) << colorIntensity;
+            appLog(logMsg.str());
+            std::cout << "Color intensity: " << colorIntensity << std::endl;
+          } else {
+            changeResolution(false);
+          }
           break;
       }
     } else if (e.type == SDL_WINDOWEVENT) {
@@ -315,7 +350,7 @@ void Application::render(double elapsedTime) {
   
   // Debug logging removed for performance
   
-  metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime);
+  metal_rt_renderer_render(gpuRenderer, &gpuCam, renderTime, colorMode, colorIntensity);
   const void *pixels = metal_rt_renderer_get_pixels(gpuRenderer);
   
   // Capture frame for video recording if recording (before texture update)
@@ -393,7 +428,7 @@ void Application::render(double elapsedTime) {
   
   // Render HUD (hide hints if recording)
   bool showHints = hud->areHintsVisible() && !isRecording;
-  hud->renderHints(showHints, cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager);
+  hud->renderHints(showHints, cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager, colorMode, colorIntensity);
 
   // Always present - this must happen every frame
   // Force presentation even if SDL thinks nothing changed

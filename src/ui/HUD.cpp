@@ -4,6 +4,7 @@
 #include <string>
 #include <cmath>
 #include <sstream>
+#include <iomanip>
 
 HUD::HUD(SDL_Renderer *renderer, TTF_Font *font)
     : renderer(renderer), font(font), hintsVisible(true) {}
@@ -39,12 +40,21 @@ std::string formatResolution(int width, int height, ResolutionManager* resolutio
   return std::to_string(width) + "×" + std::to_string(height);
 }
 
-void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, ResolutionManager* resolutionManager) {
+void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, ResolutionManager* resolutionManager, int colorMode, float colorIntensity) {
   if (!showHints || !font)
     return;
 
   // Format resolution
   std::string resolutionStr = formatResolution(windowWidth, windowHeight, resolutionManager);
+  
+  // Color mode names
+  const char* colorNames[] = {"Blue", "Orange", "Red"};
+  std::string colorModeStr = colorNames[colorMode % 3];
+  
+  // Format intensity
+  std::ostringstream intensityStream;
+  intensityStream << std::fixed << std::setprecision(1) << colorIntensity << "x";
+  std::string intensityStr = intensityStream.str();
 
   // Define hints array with key and description separated
   struct HintLine {
@@ -63,8 +73,10 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
     {"A/D", "Zoom In/Out", false, false},
     {"", "", true, false}, // Separator
     {"R", "Reset Camera", false, false},
-    {"C", "Mode: " + std::string(getCinematicModeName(mode)), false, false},
+    {"B", "Camera: " + std::string(getCinematicModeName(mode)), false, false},
+    {"C", "Color: " + colorModeStr, false, false},
     {"+/-", "Change Resolution", false, false},
+    {"Shift +/-", "Intensity: " + intensityStr, false, false},
     {"", "", true, false}, // Separator
     {"Cmd+R", "Start Recording", false, false},
     {"Enter/Esc/Q", "Stop Recording", false, false},

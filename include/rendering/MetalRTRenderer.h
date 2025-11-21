@@ -28,7 +28,7 @@ void metal_rt_renderer_resize(MetalRTRenderer *renderer, int width, int height);
 
 // Render a frame
 void metal_rt_renderer_render(MetalRTRenderer *renderer,
-                              const CameraData *camera, float time);
+                              const CameraData *camera, float time, int colorMode, float colorIntensity);
 
 // Get output texture data (RGBA8)
 const void *metal_rt_renderer_get_pixels(MetalRTRenderer *renderer);
