@@ -270,24 +270,41 @@ if [ -z "$TRANSPORTER_BIN" ] && command -v iTMSTransporter &> /dev/null; then
     TRANSPORTER_BIN=$(command -v iTMSTransporter)
 fi
 
-# 3. Check Xcode locations
+# 3. Check Xcode locations (comprehensive search)
 if [ -z "$TRANSPORTER_BIN" ]; then
     XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
+    
+    # Try various Xcode paths (including AppStoreService.framework)
+    XCODE_PATHS=(
+        "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/Frameworks/AppStoreService.framework/Versions/A/Support/iTMSTransporter"
+        "/Applications/Xcode.app/Contents/itms/bin/iTMSTransporter"
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/iTMSTransporter"
+        "/Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
+        "/Library/Developer/CommandLineTools/usr/bin/iTMSTransporter"
+    )
+    
+    # Add paths relative to xcode-select path if available
     if [ -n "$XCODE_PATH" ]; then
-        # Try various Xcode paths
-        XCODE_PATHS=(
+        XCODE_PATHS+=(
+            "$XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/Frameworks/AppStoreService.framework/Versions/A/Support/iTMSTransporter"
             "$XCODE_PATH/../itms/bin/iTMSTransporter"
-            "$XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
-            "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
-            "/Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
+            "$XCODE_PATH/../Developer/usr/bin/iTMSTransporter"
         )
-        
-        for path in "${XCODE_PATHS[@]}"; do
-            if [ -f "$path" ]; then
-                TRANSPORTER_BIN="$path"
-                break
-            fi
-        done
+    fi
+    
+    for path in "${XCODE_PATHS[@]}"; do
+        if [ -f "$path" ] && [ -x "$path" ]; then
+            TRANSPORTER_BIN="$path"
+            break
+        fi
+    done
+    
+    # Also search inside Xcode.app more thoroughly if still not found
+    if [ -z "$TRANSPORTER_BIN" ] && [ -d "/Applications/Xcode.app" ]; then
+        FOUND_IN_XCODE=$(find /Applications/Xcode.app -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
+        if [ -n "$FOUND_IN_XCODE" ] && [ -f "$FOUND_IN_XCODE" ] && [ -x "$FOUND_IN_XCODE" ]; then
+            TRANSPORTER_BIN="$FOUND_IN_XCODE"
+        fi
     fi
 fi
 

@@ -94,6 +94,100 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      # Check for Transporter EARLY (before build) to fail fast if not available
+      # This saves time by detecting the issue before the long vcpkg build process
+      - name: Check for Transporter (early validation)
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        id: check_transporter_early
+        run: |
+          echo "🔍 Checking for Transporter/iTMSTransporter (early validation)..."
+          echo "   This check runs before the build to fail fast if Transporter is missing"
+
+          # Function to check if transporter exists at a path
+          check_transporter() {
+            if [ -f "$1" ] && [ -x "$1" ]; then
+              echo "✅ Found iTMSTransporter: $1"
+              echo "transporter_path=$1" >> $GITHUB_OUTPUT
+              echo "transporter_available=true" >> $GITHUB_OUTPUT
+              return 0
+            fi
+            return 1
+          }
+
+          # 1. Check if Transporter.app is installed
+          if check_transporter "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"; then
+            exit 0
+          fi
+
+          # 2. Check Xcode paths more thoroughly
+          echo "Checking Xcode installation..."
+          XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
+          if [ -z "$XCODE_PATH" ]; then
+            echo "⚠️  Xcode not found via xcode-select"
+          else
+            echo "✅ Xcode path: $XCODE_PATH"
+          fi
+          
+          # Try various Xcode locations (comprehensive search)
+          XCODE_PATHS=(
+            "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/Frameworks/AppStoreService.framework/Versions/A/Support/iTMSTransporter"
+            "/Applications/Xcode.app/Contents/itms/bin/iTMSTransporter"
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/iTMSTransporter"
+            "/Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
+            "/Library/Developer/CommandLineTools/usr/bin/iTMSTransporter"
+          )
+          
+          # Add paths relative to xcode-select path if available
+          if [ -n "$XCODE_PATH" ]; then
+            XCODE_PATHS+=(
+              "$XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/Frameworks/AppStoreService.framework/Versions/A/Support/iTMSTransporter"
+              "$XCODE_PATH/../itms/bin/iTMSTransporter"
+              "$XCODE_PATH/../Developer/usr/bin/iTMSTransporter"
+            )
+          fi
+          
+          for path in "${XCODE_PATHS[@]}"; do
+            if check_transporter "$path"; then
+              exit 0
+            fi
+          done
+          
+          # Also search inside Xcode.app more thoroughly
+          if [ -d "/Applications/Xcode.app" ]; then
+            echo "Searching inside Xcode.app..."
+            FOUND_IN_XCODE=$(find /Applications/Xcode.app -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
+            if [ -n "$FOUND_IN_XCODE" ] && check_transporter "$FOUND_IN_XCODE"; then
+              exit 0
+            fi
+          fi
+
+          # 3. Check common system locations
+          if check_transporter "/usr/local/itms/bin/iTMSTransporter"; then
+            exit 0
+          fi
+
+          # 4. Try find command (more thorough search)
+          FOUND=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
+          if [ -n "$FOUND" ] && check_transporter "$FOUND"; then
+            exit 0
+          fi
+
+          # If not found, fail early to save build time
+          echo "❌ ERROR: iTMSTransporter not found!"
+          echo ""
+          echo "Transporter is required for App Store Connect uploads."
+          echo "GitHub Actions macOS runners should have Xcode installed, which includes Transporter."
+          echo ""
+          echo "This check runs early (before build) to fail fast and save time."
+          echo ""
+          echo "Possible solutions:"
+          echo "1. Contact GitHub Support if Xcode should include Transporter"
+          echo "2. The build will continue, but upload will be skipped"
+          echo "3. You can manually upload the .itmsp artifact after the build completes"
+          echo ""
+          echo "⚠️  Continuing build anyway, but upload will fail later..."
+          echo "transporter_available=false" >> $GITHUB_OUTPUT
+
       - name: Set up environment
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
@@ -487,63 +581,11 @@ jobs:
 
           echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
 
-      # Check for Transporter/iTMSTransporter
-      # Note: mas-cli requires interactive App Store authentication, which doesn't work in CI/CD
-      # Instead, we rely on GitHub Actions runners having Transporter pre-installed or available via Xcode
-      - name: Check for Transporter
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
-        id: check_transporter
-        run: |
-          echo "🔍 Checking for Transporter/iTMSTransporter..."
 
-          # Check if Transporter.app is installed
-          if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
-            echo "✅ Transporter.app found: /Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
-            echo "transporter_available=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Check Xcode paths
-          XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
-          if [ -n "$XCODE_PATH" ]; then
-            XCODE_PATHS=(
-              "$XCODE_PATH/../itms/bin/iTMSTransporter"
-              "$XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
-              "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
-            )
-            
-            for path in "${XCODE_PATHS[@]}"; do
-              if [ -f "$path" ]; then
-                echo "✅ Found iTMSTransporter in Xcode: $path"
-                echo "transporter_available=true" >> $GITHUB_OUTPUT
-                exit 0
-              fi
-            done
-          fi
-
-          # Check common system locations
-          if [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
-            echo "✅ Found iTMSTransporter: /usr/local/itms/bin/iTMSTransporter"
-            echo "transporter_available=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Try find command
-          FOUND=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f 2>/dev/null | head -1)
-          if [ -n "$FOUND" ]; then
-            echo "✅ Found iTMSTransporter: $FOUND"
-            echo "transporter_available=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "⚠️  iTMSTransporter not found"
-          echo "   Upload to App Store Connect will be skipped"
-          echo "   The .itmsp package will be available as an artifact for manual upload"
-          echo "transporter_available=false" >> $GITHUB_OUTPUT
-
-      # Upload to App Store Connect - only if iTMSTransporter is available
+      # Upload to App Store Connect
+      # The upload script will find Transporter automatically using comprehensive search
       - name: Upload to App Store Connect (production releases)
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64' && steps.check_transporter.outputs.transporter_available == 'true'
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
         env:
           TRANSPORTER_APPLE_ID: ${{ secrets.TRANSPORTER_APPLE_ID }}
           TRANSPORTER_PASSWORD: ${{ secrets.TRANSPORTER_PASSWORD }}
@@ -562,16 +604,42 @@ jobs:
           if [ -z "$TRANSPORTER_APPLE_ID" ] || [ -z "$TRANSPORTER_PASSWORD" ]; then
             echo "⚠️  Transporter credentials not configured, skipping App Store Connect upload"
             echo "   The .itmsp package will be available as an artifact for manual upload"
+            echo ""
+            echo "To enable automatic upload, add these secrets:"
+            echo "  - TRANSPORTER_APPLE_ID: Your Apple ID email"
+            echo "  - TRANSPORTER_PASSWORD: An app-specific password (create at appleid.apple.com)"
             exit 0
           fi
 
-          # Upload using upload_to_appstore.sh (it will find the existing .itmsp and upload it)
+          # Upload using upload_to_appstore.sh
+          # The script will automatically find Transporter using comprehensive search
+          # It will also find the existing .itmsp package and upload it
           echo "📤 Uploading to App Store Connect..."
+          echo "   The upload script will find Transporter automatically"
+          echo ""
+          
           ./scripts/upload_to_appstore.sh || {
-            echo "⚠️  Upload failed"
+            EXIT_CODE=$?
+            echo ""
+            echo "⚠️  Upload failed (exit code: $EXIT_CODE)"
             echo "   The .itmsp package is available as an artifact for manual upload"
+            echo ""
+            echo "Possible reasons:"
+            echo "  - Transporter not found (check 'Check for Transporter (early validation)' step logs)"
+            echo "  - Network issues"
+            echo "  - Invalid credentials"
+            echo "  - App Store Connect API issues"
+            echo ""
+            echo "To upload manually:"
+            echo "  1. Download the .itmsp artifact from this workflow run"
+            echo "  2. Install Transporter from: https://apps.apple.com/app/transporter/id1450874784"
+            echo "  3. Run: open -a Transporter /path/to/Blackhole Sim.itmsp"
             exit 0  # Don't fail the workflow
           }
+          
+          echo ""
+          echo "✅ Upload completed successfully!"
+          echo "   Check App Store Connect for processing status"
 
       # DMG creation is optional - only needed for testing or direct distribution
       # App Store distribution doesn't require DMG files
