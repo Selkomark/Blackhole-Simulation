@@ -128,6 +128,17 @@ jobs:
             echo "✅ Xcode path: $XCODE_PATH"
           fi
           
+          # Try using xcrun to find Transporter (if available)
+          if command -v xcrun &> /dev/null; then
+            echo "Checking if xcrun can find Transporter..."
+            XCRUN_TRANSPORTER=$(xcrun --find iTMSTransporter 2>/dev/null || echo "")
+            if [ -n "$XCRUN_TRANSPORTER" ] && [ -f "$XCRUN_TRANSPORTER" ]; then
+              if check_transporter "$XCRUN_TRANSPORTER"; then
+                exit 0
+              fi
+            fi
+          fi
+
           # Try various Xcode locations (comprehensive search)
           XCODE_PATHS=(
             "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/Frameworks/AppStoreService.framework/Versions/A/Support/iTMSTransporter"
@@ -136,7 +147,7 @@ jobs:
             "/Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
             "/Library/Developer/CommandLineTools/usr/bin/iTMSTransporter"
           )
-          
+
           # Add paths relative to xcode-select path if available
           if [ -n "$XCODE_PATH" ]; then
             XCODE_PATHS+=(
@@ -145,19 +156,25 @@ jobs:
               "$XCODE_PATH/../Developer/usr/bin/iTMSTransporter"
             )
           fi
-          
+
           for path in "${XCODE_PATHS[@]}"; do
             if check_transporter "$path"; then
               exit 0
             fi
           done
-          
+
           # Also search inside Xcode.app more thoroughly
           if [ -d "/Applications/Xcode.app" ]; then
             echo "Searching inside Xcode.app..."
             FOUND_IN_XCODE=$(find /Applications/Xcode.app -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
             if [ -n "$FOUND_IN_XCODE" ] && check_transporter "$FOUND_IN_XCODE"; then
               exit 0
+            fi
+            
+            # Debug: List ContentDeliveryServices framework if it exists
+            if [ -d "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework" ]; then
+              echo "Found ContentDeliveryServices.framework, listing contents..."
+              find "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework" -name "*Transporter*" -o -name "*itms*" 2>/dev/null | head -10 || true
             fi
           fi
 
@@ -172,21 +189,70 @@ jobs:
             exit 0
           fi
 
-          # If not found, fail early to save build time
-          echo "❌ ERROR: iTMSTransporter not found!"
+          # If not found, try to install Transporter
+          echo "⚠️  iTMSTransporter not found, attempting to install..."
+          
+          # Try installing mas-cli first (Mac App Store CLI)
+          if ! command -v mas &> /dev/null; then
+            echo "📥 Installing mas-cli (Mac App Store CLI)..."
+            if command -v brew &> /dev/null; then
+              brew install mas || echo "⚠️  Failed to install mas-cli via Homebrew"
+            else
+              echo "⚠️  Homebrew not available, cannot install mas-cli"
+            fi
+          fi
+          
+          # Try to install Transporter via mas-cli (requires App Store authentication)
+          if command -v mas &> /dev/null; then
+            echo "📥 Attempting to install Transporter via mas-cli..."
+            echo "   Note: This requires App Store authentication"
+            echo "   Transporter App Store ID: 1450874784"
+            # mas install 1450874784
+            # Note: This will likely fail in CI/CD due to authentication, but we'll try
+            if mas install 1450874784 2>&1; then
+              echo "✅ Transporter installed successfully via mas-cli"
+              # Check again after installation
+              if check_transporter "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"; then
+                exit 0
+              fi
+            else
+              echo "⚠️  Failed to install Transporter via mas-cli (likely authentication issue)"
+            fi
+          fi
+          
+          # Final check: try to find it one more time after potential installation
+          echo "🔍 Final search after installation attempts..."
+          FINAL_SEARCH=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
+          if [ -n "$FINAL_SEARCH" ] && check_transporter "$FINAL_SEARCH"; then
+            exit 0
+          fi
+          
+          # If still not found, fail the workflow
           echo ""
-          echo "Transporter is required for App Store Connect uploads."
+          echo "❌ ERROR: iTMSTransporter not found and could not be installed!"
+          echo ""
+          echo "Transporter is REQUIRED for App Store Connect uploads."
           echo "GitHub Actions macOS runners should have Xcode installed, which includes Transporter."
           echo ""
-          echo "This check runs early (before build) to fail fast and save time."
+          echo "This workflow will FAIL because upload cannot proceed without Transporter."
           echo ""
-          echo "Possible solutions:"
-          echo "1. Contact GitHub Support if Xcode should include Transporter"
-          echo "2. The build will continue, but upload will be skipped"
-          echo "3. You can manually upload the .itmsp artifact after the build completes"
+          echo "Troubleshooting:"
+          echo "1. Check if Xcode is properly installed on the runner"
+          echo "2. Verify Xcode version includes Transporter"
+          echo "3. Check GitHub Actions runner image documentation"
+          echo "4. Contact GitHub Support if Transporter should be available"
           echo ""
-          echo "⚠️  Continuing build anyway, but upload will fail later..."
-          echo "transporter_available=false" >> $GITHUB_OUTPUT
+          echo "Searched locations:"
+          echo "  - /Applications/Transporter.app"
+          echo "  - Xcode.app paths (multiple locations)"
+          echo "  - /Library/Developer/CommandLineTools"
+          echo "  - /usr/local/itms"
+          echo "  - Common system directories"
+          echo ""
+          echo "Installation attempts:"
+          echo "  - mas-cli (Mac App Store CLI) - may require authentication"
+          echo ""
+          exit 1  # Fail the workflow - no point continuing without Transporter
 
       - name: Set up environment
         run: |
@@ -581,7 +647,6 @@ jobs:
 
           echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
 
-
       # Upload to App Store Connect
       # The upload script will find Transporter automatically using comprehensive search
       - name: Upload to App Store Connect (production releases)
@@ -617,7 +682,7 @@ jobs:
           echo "📤 Uploading to App Store Connect..."
           echo "   The upload script will find Transporter automatically"
           echo ""
-          
+
           ./scripts/upload_to_appstore.sh || {
             EXIT_CODE=$?
             echo ""
@@ -636,7 +701,7 @@ jobs:
             echo "  3. Run: open -a Transporter /path/to/Blackhole Sim.itmsp"
             exit 0  # Don't fail the workflow
           }
-          
+
           echo ""
           echo "✅ Upload completed successfully!"
           echo "   Check App Store Connect for processing status"
