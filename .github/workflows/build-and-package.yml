@@ -281,28 +281,12 @@ jobs:
           echo "Include path:"
           grep "INCLUDES" Makefile
 
-      - name: Cache build artifacts
-        id: cache-build
-        uses: actions/cache@v4
-        with:
-          path: |
-            build
-            export/blackhole_sim
-          key: ${{ runner.os }}-build-${{ matrix.arch }}-${{ hashFiles('Makefile', 'src/**/*.cpp', 'src/**/*.mm', 'include/**/*.hpp', 'shaders/**/*.metal') }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ matrix.arch }}-
-
       - name: Build application
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          # Only clean if cache miss to speed up builds
-          if [ "${{ steps.cache-build.outputs.cache-hit }}" != "true" ]; then
-            echo "Cache miss - cleaning build directory"
-            make clean
-          else
-            echo "Cache hit - skipping clean for faster build"
-          fi
+          # Clean build for production releases (ensures reproducible builds)
+          make clean
           make
 
       - name: Create app bundle
