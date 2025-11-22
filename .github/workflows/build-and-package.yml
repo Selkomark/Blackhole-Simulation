@@ -18,7 +18,7 @@ name: Build and Package
 #
 # Note: Code signing is enabled if MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD secrets are configured.
 # To set up signing:
-#   1. Export your Developer ID certificate as a .p12 file
+#   1. Export your App Store certificate (Apple Distribution or 3rd Party Mac Developer Application) as a .p12 file
 #   2. Base64 encode it: base64 -i YourCertificate.p12 | pbcopy
 #   3. Add it as a GitHub secret: MACOS_CERTIFICATE
 #   4. Add the certificate password as another secret: MACOS_CERTIFICATE_PASSWORD
@@ -326,14 +326,16 @@ jobs:
           # Allow codesign to access the certificate
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
 
-          # Find and export the signing identity
+          # Find and export the signing identity (App Store certificate)
           IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | \
-            grep "Developer ID Application" | \
+            grep -E "(Apple Distribution|3rd Party Mac Developer Application)" | \
             head -1 | \
             sed -n 's/.*"\(.*\)".*/\1/p')
 
           if [ -z "$IDENTITY" ]; then
-            echo "❌ Error: Could not find Developer ID Application certificate"
+            echo "❌ Error: Could not find App Store certificate"
+            echo "   Expected: Apple Distribution or 3rd Party Mac Developer Application"
+            echo "   Check that MACOS_CERTIFICATE contains the correct App Store certificate"
             security list-keychain -d user -s login.keychain
             exit 1
           fi
