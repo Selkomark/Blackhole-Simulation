@@ -466,46 +466,49 @@ jobs:
 
       # Install Transporter for App Store uploads
       # Note: Transporter is required for iTMSTransporter CLI tool
+      # Transporter is not available via Homebrew, so we use mas-cli (Mac App Store CLI)
       - name: Install Transporter
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
         run: |
           echo "📦 Installing Transporter..."
-          
+
           # Check if Transporter is already installed
           if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
             echo "✅ Transporter already installed"
             exit 0
           fi
-          
-          # Try to install via Homebrew cask (most reliable for CI/CD)
-          echo "Attempting to install Transporter via Homebrew..."
-          if brew install --cask transporter || brew install --cask transporter 2>/dev/null; then
-            echo "✅ Transporter installed via Homebrew"
-            exit 0
+
+          # Install mas-cli (Mac App Store command line tool) if not available
+          if ! command -v mas &> /dev/null; then
+            echo "Installing mas-cli..."
+            brew install mas
           fi
-          
-          # Alternative: Download and install manually
-          echo "⚠️  Homebrew installation failed, trying manual download..."
-          TRANSPORTER_DMG="/tmp/Transporter.dmg"
-          
-          # Download Transporter (this URL may need to be updated)
-          # Note: Apple doesn't provide direct download links, so we'll need mas-cli or manual install
-          if command -v mas &> /dev/null; then
-            echo "Using mas-cli to install Transporter..."
-            mas install 1450874784 || echo "⚠️  mas install failed (may require App Store sign-in)"
-          else
-            echo "⚠️  mas-cli not available"
-          fi
-          
-          # Wait a bit and check if it appeared
-          sleep 10
-          
-          # Verify installation
-          if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
+
+          # Install Transporter from Mac App Store (App ID: 1450874784)
+          echo "Installing Transporter from Mac App Store via mas-cli..."
+          echo "Note: This may require App Store authentication in CI/CD"
+
+          # Try to install Transporter
+          if mas install 1450874784; then
             echo "✅ Transporter installed successfully"
           else
-            echo "⚠️  Transporter not found - upload script will try alternative locations"
-            echo "   The script will attempt to find iTMSTransporter in Xcode paths"
+            echo "⚠️  Failed to install Transporter via mas-cli"
+            echo "   This may require App Store sign-in in CI/CD environment"
+            echo "   The upload script will try to find iTMSTransporter in alternative locations"
+          fi
+
+          # Wait a bit for installation to complete
+          sleep 5
+
+          # Verify installation
+          if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
+            echo "✅ Transporter verified: /Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+          else
+            echo "⚠️  Transporter not found after installation attempt"
+            echo "   The upload script will search for iTMSTransporter in:"
+            echo "   - Xcode installation paths"
+            echo "   - Common system directories"
+            echo "   - This may fail if Transporter is not pre-installed on the runner"
           fi
 
       # Upload to App Store Connect - matches 'make upload' behavior
