@@ -106,6 +106,10 @@ sign: app
 notarize: sign
 	@./scripts/notarize_app.sh
 
+# Prepare .itmsp package for App Store Connect upload via Transporter
+upload: sign
+	@./scripts/upload_to_appstore.sh
+
 # Create DMG for distribution
 dmg: app
 	@./scripts/create_dmg.sh
@@ -124,4 +128,4 @@ clean:
 # Rebuild from scratch
 rebuild: clean all
 
-.PHONY: all run clean rebuild app sign notarize dmg release package
+.PHONY: all run clean rebuild app sign notarize upload dmg release package

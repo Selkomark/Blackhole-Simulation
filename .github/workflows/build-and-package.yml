@@ -440,6 +440,15 @@ jobs:
         run: |
           ./scripts/create_dmg.sh
 
+      - name: Create .itmsp package for App Store (production releases)
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true'
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "📦 Creating .itmsp package for App Store Connect..."
+          ./scripts/create_itmsp.sh
+          echo "✅ .itmsp package created: export/Blackhole Simulation.itmsp"
+
       - name: Rename DMG with architecture
         run: |
           cd export
@@ -453,6 +462,15 @@ jobs:
         with:
           name: BlackholeSimulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}-dmg
           path: export/Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload .itmsp package artifact (App Store)
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackholeSimulation-${{ steps.version.outputs.version }}-appstore-itmsp
+          path: export/Blackhole Simulation.itmsp
           retention-days: 30
           if-no-files-found: error
 
@@ -478,6 +496,9 @@ jobs:
           fi
           echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- DMG: Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${SIGNING_ENABLED:-false}" = "true" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo "- 📦 App Store: Blackhole Simulation.itmsp (download and upload via Transporter)" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # Upload release assets when triggered by a tag
   upload-release:

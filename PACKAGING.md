@@ -262,8 +262,8 @@ export NOTARY_KEYCHAIN_PROFILE="notary-profile"
 Set environment variables before running notarization:
 
 ```bash
-export NOTARY_APPLE_ID="mahan@selkomark.com"
-export NOTARY_TEAM_ID="72583G5MNU"  # Your Team ID (e.g., "72583G5MNU")
+export NOTARY_APPLE_ID="your@email.com"
+export NOTARY_TEAM_ID="YOUR_TEAM_ID"  # Your Team ID (e.g., "72583G5MNU")
 export NOTARY_PASSWORD="app-specific-password"
 ```
 
