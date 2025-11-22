@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Helper script to launch Blackhole Simulation.app
+# Helper script to launch Blackhole Sim.app
 # This bypasses Gatekeeper for unnotarized Developer ID apps
 
-APP_BUNDLE="export/Blackhole Simulation.app"
+APP_BUNDLE="export/Blackhole Sim.app"
 EXECUTABLE_NAME="blackhole_sim"
 
 if [ ! -d "${APP_BUNDLE}" ]; then
@@ -12,7 +12,7 @@ if [ ! -d "${APP_BUNDLE}" ]; then
     exit 1
 fi
 
-echo "🚀 Launching Blackhole Simulation..."
+echo "🚀 Launching Blackhole Sim..."
 echo ""
 
 # Method 1: Direct execution (bypasses Gatekeeper)

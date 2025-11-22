@@ -1,6 +1,6 @@
 name: Build and Package
 
-# This workflow builds the Blackhole Simulation application for both Intel (x86_64) and Apple Silicon (arm64)
+# This workflow builds the Blackhole Sim application for both Intel (x86_64) and Apple Silicon (arm64)
 # architectures, creates DMG files, and uploads them as artifacts.
 #
 # Triggers:
@@ -14,7 +14,7 @@ name: Build and Package
 #   - Default version for branch builds: 1.0
 #
 # Outputs:
-#   - DMG files for each architecture (Blackhole Simulation-<VERSION>-<arch>.dmg)
+#   - DMG files for each architecture (Blackhole Sim-<VERSION>-<arch>.dmg)
 #   - For tag pushes: DMG files are uploaded as release assets on GitHub Releases
 #   - For branch pushes: DMG files are uploaded as workflow artifacts
 #
@@ -26,6 +26,17 @@ name: Build and Package
 #   4. Add the certificate password as another secret: MACOS_CERTIFICATE_PASSWORD
 #
 # Notarization is enabled for production releases (tags) if NOTARY_APPLE_ID, NOTARY_TEAM_ID, and NOTARY_PASSWORD secrets are configured.
+#
+# App Store Connect upload is enabled if MACOS_INSTALLER_CERTIFICATE, MACOS_INSTALLER_CERTIFICATE_PASSWORD,
+# TRANSPORTER_APPLE_ID, and TRANSPORTER_PASSWORD secrets are configured.
+# To set up App Store upload:
+#   1. Export your Mac Installer Distribution certificate as a .p12 file
+#   2. Base64 encode it: base64 -i MacInstallerDistribution.p12 | pbcopy
+#   3. Add it as a GitHub secret: MACOS_INSTALLER_CERTIFICATE
+#   4. Add the certificate password as another secret: MACOS_INSTALLER_CERTIFICATE_PASSWORD
+#   5. Create an app-specific password at appleid.apple.com
+#   6. Add your Apple ID as secret: TRANSPORTER_APPLE_ID
+#   7. Add the app-specific password as secret: TRANSPORTER_PASSWORD
 # To set up notarization:
 #   1. Create an app-specific password at https://appleid.apple.com
 #   2. Add secrets:
@@ -447,21 +458,71 @@ jobs:
         run: |
           echo "📦 Creating .itmsp package for App Store Connect..."
           ./scripts/create_itmsp.sh
-          echo "✅ .itmsp package created: export/Blackhole Simulation.itmsp"
+          echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
+
+      - name: Import Mac Installer Distribution certificate for .pkg signing
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        env:
+          MACOS_INSTALLER_CERTIFICATE: ${{ secrets.MACOS_INSTALLER_CERTIFICATE }}
+          MACOS_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
+        run: |
+          # Check if installer certificate secrets are configured
+          if [ -z "$MACOS_INSTALLER_CERTIFICATE" ] || [ -z "$MACOS_INSTALLER_CERTIFICATE_PASSWORD" ]; then
+            echo "⚠️  Installer certificate secrets not configured, skipping .pkg signing"
+            echo "   Upload to App Store Connect will be skipped"
+            exit 0
+          fi
+
+          # Import the Mac Installer Distribution certificate to the existing keychain
+          CERTIFICATE_PATH=$RUNNER_TEMP/installer_certificate.p12
+          KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
+
+          echo "Importing Mac Installer Distribution certificate..."
+          echo "$MACOS_INSTALLER_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
+          security import $CERTIFICATE_PATH -P "$MACOS_INSTALLER_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          rm $CERTIFICATE_PATH
+
+          # Verify the certificate is available
+          if security find-identity -v -p macappstore | grep -q "3rd Party Mac Developer Installer"; then
+            echo "✅ Mac Installer Distribution certificate imported successfully"
+            echo "installer_cert_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Warning: Certificate imported but not found in keychain"
+            echo "installer_cert_available=false" >> $GITHUB_OUTPUT
+          fi
+        id: import_installer_cert
+
+      - name: Upload to App Store Connect (production releases)
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64' && steps.import_installer_cert.outputs.installer_cert_available == 'true'
+        env:
+          TRANSPORTER_APPLE_ID: ${{ secrets.TRANSPORTER_APPLE_ID }}
+          TRANSPORTER_PASSWORD: ${{ secrets.TRANSPORTER_PASSWORD }}
+        timeout-minutes: 30
+        run: |
+          # Check if Transporter credentials are configured
+          if [ -z "$TRANSPORTER_APPLE_ID" ] || [ -z "$TRANSPORTER_PASSWORD" ]; then
+            echo "⚠️  Transporter credentials not configured, skipping App Store Connect upload"
+            echo "   The .itmsp package will be available as an artifact for manual upload"
+            exit 0
+          fi
+
+          echo "📤 Uploading to App Store Connect..."
+          ./scripts/upload_to_appstore.sh
 
       - name: Rename DMG with architecture
         run: |
           cd export
           VERSION="${{ steps.version.outputs.version }}"
-          if [ -f "Blackhole Simulation-${VERSION}.dmg" ]; then
-            mv "Blackhole Simulation-${VERSION}.dmg" "Blackhole Simulation-${VERSION}-${{ matrix.arch }}.dmg"
+          if [ -f "Blackhole Sim-${VERSION}.dmg" ]; then
+            mv "Blackhole Sim-${VERSION}.dmg" "Blackhole Sim-${VERSION}-${{ matrix.arch }}.dmg"
           fi
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BlackholeSimulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}-dmg
-          path: export/Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
+          name: BlackholeSim-${{ steps.version.outputs.version }}-${{ matrix.arch }}-dmg
+          path: export/Blackhole Sim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
           retention-days: 30
           if-no-files-found: error
 
@@ -469,8 +530,8 @@ jobs:
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
         uses: actions/upload-artifact@v4
         with:
-          name: BlackholeSimulation-${{ steps.version.outputs.version }}-appstore-itmsp
-          path: export/Blackhole Simulation.itmsp
+          name: BlackholeSim-${{ steps.version.outputs.version }}-appstore-itmsp
+          path: export/Blackhole Sim.itmsp
           retention-days: 30
           if-no-files-found: error
 
@@ -495,9 +556,9 @@ jobs:
             echo "- ⚠️ Code signed: No (secrets not configured)" >> $GITHUB_STEP_SUMMARY
           fi
           echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- DMG: Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
+          echo "- DMG: Blackhole Sim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.ref_type }}" = "tag" ] && [ "${SIGNING_ENABLED:-false}" = "true" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
-            echo "- 📦 App Store: Blackhole Simulation.itmsp (download and upload via Transporter)" >> $GITHUB_STEP_SUMMARY
+            echo "- 📦 App Store: Blackhole Sim.itmsp (automatically uploaded)" >> $GITHUB_STEP_SUMMARY
           fi
 
   # Upload release assets when triggered by a tag
@@ -524,7 +585,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: BlackholeSimulation-${{ steps.version.outputs.version }}-*-dmg
+          pattern: BlackholeSim-${{ steps.version.outputs.version }}-*-dmg
           merge-multiple: false
           path: release-assets
 

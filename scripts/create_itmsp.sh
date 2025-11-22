@@ -5,7 +5,7 @@
 
 set -e
 
-APP_NAME="Blackhole Simulation"
+APP_NAME="Blackhole Sim"
 APP_BUNDLE="export/${APP_NAME}.app"
 BUNDLE_ID="com.blackhole.simulation"
 VERSION="${APP_VERSION:-1.0}"  # Use APP_VERSION from env if set (for CI/CD)
@@ -32,22 +32,35 @@ fi
 # Create .itmsp directory
 mkdir -p "$ITMSP_PATH"
 
-# Copy app bundle into .itmsp
-echo "Copying app bundle..."
-cp -R "$APP_BUNDLE" "$ITMSP_PATH/"
+# Create .pkg installer from app bundle (required for App Store uploads)
+echo "Creating .pkg installer..."
+PKG_FILE="${APP_NAME}.pkg"
+PKG_PATH="$ITMSP_PATH/$PKG_FILE"
+
+# Build the .pkg installer
+# The app will be installed to /Applications
+productbuild --component "$APP_BUNDLE" /Applications "$PKG_PATH"
+
+if [ ! -f "$PKG_PATH" ]; then
+    echo "❌ Failed to create .pkg installer"
+    exit 1
+fi
+
+echo "✅ Created .pkg installer"
 
 # Create metadata.xml
+# For macOS apps, reference the .pkg file (not the .app bundle)
 echo "Creating metadata.xml..."
 cat > "$ITMSP_PATH/metadata.xml" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<package version="software5.7" xmlns="http://apple.com/itunes/importer">
-    <software_assets apple_id="${BUNDLE_ID}">
-        <asset type="bundle">
-            <data_file>
-                <file_name>${APP_NAME}.app</file_name>
-            </data_file>
-        </asset>
-    </software_assets>
+<package version="software5.4" xmlns="http://apple.com/itunes/importer">
+<software_assets>
+<asset type="bundle">
+<data_file>
+<file_name>${PKG_FILE}</file_name>
+</data_file>
+</asset>
+</software_assets>
 </package>
 EOF
 

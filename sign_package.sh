@@ -12,7 +12,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${PROJECT_ROOT}"
 
 EXPORT_DIR="export"
-APP_NAME="Blackhole Simulation"
+APP_NAME="Blackhole Sim"
 APP_BUNDLE="${EXPORT_DIR}/${APP_NAME}.app"
 DMG_FILE="${EXPORT_DIR}/${APP_NAME}-1.0.dmg"
 

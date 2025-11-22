@@ -4,7 +4,7 @@
 set -e
 
 EXPORT_DIR="export"
-APP_NAME="Blackhole Simulation"
+APP_NAME="Blackhole Sim"
 APP_BUNDLE="${EXPORT_DIR}/${APP_NAME}.app"
 EXECUTABLE_NAME="blackhole_sim"
 CONTENTS_DIR="${APP_BUNDLE}/Contents"
@@ -54,7 +54,7 @@ cat > "${CONTENTS_DIR}/Info.plist" << EOF
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>Blackhole Simulation</string>
+    <string>Blackhole Sim</string>
     <key>CFBundleVersion</key>
     <string>${APP_VERSION:-1.0}</string>
     <key>CFBundleShortVersionString</key>
@@ -64,13 +64,17 @@ cat > "${CONTENTS_DIR}/Info.plist" << EOF
     <key>CFBundleSignature</key>
     <string>BHLS</string>
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>12.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.education</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
 EOF

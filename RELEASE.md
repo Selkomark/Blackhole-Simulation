@@ -16,6 +16,21 @@ Complete guide for building, signing, and uploading Black Hole Simulation to the
 
 **Note**: For GitHub Actions CI/CD, the `.itmsp` package is created automatically as an artifact that can be downloaded and uploaded manually via Transporter.
 
+### 3. App-Specific Password (Required for Transporter)
+Transporter requires an **app-specific password** for authentication, not your regular Apple ID password.
+
+**Create an App-Specific Password:**
+1. Go to [appleid.apple.com](https://appleid.apple.com/account/manage)
+2. Sign in with your Apple ID
+3. Navigate to **Sign-In and Security** → **App-Specific Passwords**
+4. Click **+** (Generate Password)
+5. Enter a label: `Transporter` or `App Store Connect`
+6. Click **Create**
+7. **Copy the password immediately** (shown only once, formatted as `xxxx-xxxx-xxxx-xxxx`)
+8. Save it securely - you'll use this password when signing in to Transporter
+
+**Important**: If you lose the password, you'll need to revoke it and create a new one.
+
 #### Step 1: Generate API Key
 1. Log in to [App Store Connect](https://appstoreconnect.apple.com/)
 2. Go to **Users and Access** → **Keys** tab
@@ -48,7 +63,7 @@ Then reload:
 source ~/.zshrc  # or source ~/.bash_profile
 ```
 
-### 3. App Store Certificate
+### 4. App Store Certificate
 
 You need an **App Store** certificate (not Developer ID):
 
@@ -147,7 +162,41 @@ make upload
 This will:
 1. Build and sign your app (if needed)
 2. Create a `.itmsp` package (iTunes Metadata Package)
-3. Open Transporter.app automatically
+3. Upload via Transporter (GUI or CLI mode)
+
+#### Upload Modes
+
+**Option A: Command-Line Upload (Recommended - Bypasses Password Prompts)**
+
+This method uses environment variables and bypasses cached credentials issues:
+
+```bash
+# Set environment variables
+export TRANSPORTER_APPLE_ID="your@email.com"
+export TRANSPORTER_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # App-specific password
+export TRANSPORTER_UPLOAD_MODE="cli"
+
+# Run upload script
+make upload
+# or directly:
+./scripts/upload_to_appstore.sh
+```
+
+**Benefits:**
+- ✅ No password prompts or cached credential issues
+- ✅ Explicitly uses your app-specific password
+- ✅ Better for automation and CI/CD
+- ✅ Shows upload progress in terminal
+
+**Option B: GUI Upload (Default)**
+
+If you don't set the environment variables, the script defaults to GUI mode:
+
+```bash
+make upload
+```
+
+This opens Transporter.app with your `.itmsp` package.
 
 **Manual Method:**
 
@@ -159,10 +208,23 @@ This will:
 open -a Transporter "export/Blackhole Simulation.itmsp"
 ```
 
-### Step 3: Upload via Transporter GUI
+### Step 3: Upload via Transporter
+
+#### If Using CLI Mode:
+
+The script will automatically upload using command-line Transporter. You'll see progress in the terminal.
+
+#### If Using GUI Mode:
 
 1. **Transporter should open automatically** with your `.itmsp` package
-2. **Sign in** with your Apple ID (if prompted)
+2. **Sign in** with your Apple ID
+   - ⚠️ **IMPORTANT**: You must use an **App-Specific Password**, not your regular Apple ID password
+   - If you don't have one, create it at: [appleid.apple.com](https://appleid.apple.com/account/manage)
+   - Go to **Sign-In and Security** → **App-Specific Passwords**
+   - Click **+** to generate a new password
+   - Name it "Transporter" or "App Store Connect"
+   - Copy the password immediately (shown only once)
+   - Use this password when signing in to Transporter
 3. **Click "DELIVER"** to upload to App Store Connect
 4. **Wait for upload** to complete (shows progress in Transporter)
 
@@ -210,6 +272,47 @@ Ensure all required fields are filled:
 - Install Transporter from the Mac App Store
 - Or use Xcode Organizer (Window → Organizer → Distribute App)
 
+### Error: "Sign in with the app-specific password you generated" (-22938)
+This error occurs when Transporter has cached incorrect credentials (likely your regular Apple ID password instead of an app-specific password).
+
+**Solution:**
+
+**Option 1: Sign Out and Sign Back In (Recommended)**
+1. Open Transporter.app
+2. Go to **Transporter** → **Preferences** (or press `Cmd + ,`)
+3. Look for a **Sign Out** button or option
+4. Sign out completely
+5. Close and reopen Transporter
+6. When prompted, sign in with:
+   - Your Apple ID email
+   - Your **app-specific password** (not your regular password)
+7. Try uploading again
+
+**Option 2: Clear Keychain Credentials**
+If Transporter doesn't have a sign-out option, clear the stored credentials manually:
+
+1. Open **Keychain Access** (Applications → Utilities → Keychain Access)
+2. Search for `Transporter` or `com.apple.transporter`
+3. Find entries related to your Apple ID
+4. Delete the relevant keychain entries
+5. Restart Transporter
+6. It should prompt for credentials again - use your app-specific password
+
+**Option 3: Generate a New App-Specific Password**
+If you're not sure which app-specific password Transporter is using:
+
+1. Go to [appleid.apple.com](https://appleid.apple.com/account/manage)
+2. Sign in with your Apple ID
+3. Navigate to **Sign-In and Security** → **App-Specific Passwords**
+4. **Revoke** any old "Transporter" passwords
+5. Click **+** (Generate Password)
+6. Enter a label: `Transporter` or `App Store Connect`
+7. Click **Create**
+8. **Copy the password immediately** (it's shown only once, formatted as `xxxx-xxxx-xxxx-xxxx`)
+9. Sign out and sign back into Transporter with this new password
+
+**Note**: Changing your Apple ID password automatically revokes all app-specific passwords, so you'll need to create a new one.
+
 ### Error: "Certificate not found"
 ```bash
 # List available certificates
@@ -245,20 +348,43 @@ spctl --assess --verbose "export/Blackhole Simulation.app"
 ## Quick Reference
 
 ### Environment Variables
+
+**For API Key (if using API-based uploads):**
 ```bash
 export APPSTORE_API_KEY_PATH="$HOME/.appstoreconnect/AuthKey_XXXXXXXX.p8"
 export APPSTORE_API_KEY_ID="YOUR_KEY_ID"
 export APPSTORE_ISSUER_ID="YOUR_ISSUER_ID"
 ```
 
-### Upload Command
+**For Transporter CLI Upload:**
 ```bash
-# Automated: Creates .itmsp and opens Transporter
+export TRANSPORTER_APPLE_ID="your@email.com"
+export TRANSPORTER_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # App-specific password
+export TRANSPORTER_UPLOAD_MODE="cli"  # Optional: "cli" or "gui" (default: "gui")
+```
+
+### Upload Command
+
+**GUI Mode (default):**
+```bash
+# Automated: Creates .itmsp and opens Transporter GUI
 make upload
 
 # Or manually:
 ./scripts/create_itmsp.sh
 open -a Transporter "export/Blackhole Simulation.itmsp"
+```
+
+**CLI Mode (recommended for avoiding password prompts):**
+```bash
+# Set environment variables first
+export TRANSPORTER_APPLE_ID="your@email.com"
+export TRANSPORTER_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+
+# Then run upload
+TRANSPORTER_UPLOAD_MODE="cli" make upload
+# or directly:
+TRANSPORTER_UPLOAD_MODE="cli" ./scripts/upload_to_appstore.sh
 ```
 
 ### Verification Commands
